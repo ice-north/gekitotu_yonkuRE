@@ -1,53 +1,140 @@
 // 激突四駆RE - メインゲームロジック
+// ファミコン「激突四駆バトル」オマージュ
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+const W = canvas.width;   // 1200
+const H = canvas.height;  // 900
 
 // ========================================
 // 定数
 // ========================================
-const SCALE = 3;           // ドット絵の拡大率
+const SCALE = 1.5;         // ドット絵拡大率（元の半分: 3→1.5）
 const TOTAL_LAPS = 5;
 const MAX_HP = 100;
-const SPECIAL_COOLDOWN = 300; // スペシャルのクールダウン(フレーム)
-const AI_COUNT = 5;        // AI車の数
+const SPECIAL_COOLDOWN = 300;
+const AI_COUNT = 5;
+
+// FCパレット風カラー
+const FC_BLACK   = "#0f0f0f";
+const FC_DKGRAY  = "#303030";
+const FC_WHITE   = "#fcfcfc";
+const FC_RED     = "#c83028";
+const FC_BLUE    = "#0058a8";
+const FC_GREEN   = "#00a800";
+const FC_YELLOW  = "#f8d800";
+const FC_CYAN    = "#00e8d8";
+const FC_ORANGE  = "#f87818";
+
+// ボディカラー選択肢（オレンジ部分を差し替える）
+const BODY_COLORS = [
+  { name: "オレンジ",   hueShift: 0,   color: "#f87818" },
+  { name: "レッド",     hueShift: -15, color: "#e03020" },
+  { name: "ブルー",     hueShift: 200, color: "#2060e0" },
+  { name: "グリーン",   hueShift: 100, color: "#20b040" },
+  { name: "イエロー",   hueShift: 30,  color: "#e8c010" },
+  { name: "ホワイト",   hueShift: 0,   color: "#e0e0e0" },
+  { name: "パープル",   hueShift: 260, color: "#9030d0" },
+  { name: "ピンク",     hueShift: 320, color: "#e05090" },
+  { name: "シアン",     hueShift: 170, color: "#00c8c8" },
+  { name: "ブラック",   hueShift: 0,   color: "#383838" },
+];
+
+let playerColor1 = 0;  // 1P カラー選択インデックス
+let playerColor2 = 3;  // 2P カラー選択インデックス
 
 // ========================================
-// 画像読み込み
+// 画像読み込み & カラー変換
 // ========================================
-const carImages = [];
+const carImagesOriginal = [];
 let imagesLoaded = 0;
+
+// 各車×各色の着色済みcanvasをキャッシュ
+const coloredCarCache = {};
+
 CAR_DATA.forEach((data) => {
   const img = new Image();
   img.src = data.img;
   img.onload = () => { imagesLoaded++; };
-  carImages.push(img);
+  carImagesOriginal.push(img);
 });
+
+// オレンジ系ピクセルを検出して別色に置換したcanvasを生成
+function getColoredCar(carIndex, colorIndex) {
+  const key = `${carIndex}_${colorIndex}`;
+  if (coloredCarCache[key]) return coloredCarCache[key];
+
+  const img = carImagesOriginal[carIndex];
+  if (!img || !img.complete || img.naturalWidth === 0) return null;
+
+  const offCanvas = document.createElement("canvas");
+  offCanvas.width = img.naturalWidth;
+  offCanvas.height = img.naturalHeight;
+  const offCtx = offCanvas.getContext("2d");
+  offCtx.drawImage(img, 0, 0);
+
+  if (colorIndex !== 0) { // 0=オレンジ（オリジナル）
+    const imageData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
+    const d = imageData.data;
+    const targetColor = hexToRgb(BODY_COLORS[colorIndex].color);
+
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
+      if (a === 0) continue;
+      // オレンジ系: R高め、G中程度、B低め
+      if (r > 150 && g > 60 && g < 180 && b < 80 && r > g) {
+        // 明度を保持しつつ色相を変更
+        const brightness = (r + g + b) / (248 + 120 + 24); // 元オレンジの平均で正規化
+        d[i]     = Math.min(255, Math.floor(targetColor.r * brightness));
+        d[i + 1] = Math.min(255, Math.floor(targetColor.g * brightness));
+        d[i + 2] = Math.min(255, Math.floor(targetColor.b * brightness));
+      }
+      // 暗いオレンジ（影の部分）
+      else if (r > 100 && r < 180 && g > 40 && g < 120 && b < 60 && r > g) {
+        const brightness = (r + g + b) / (140 + 80 + 20);
+        d[i]     = Math.min(255, Math.floor(targetColor.r * brightness * 0.6));
+        d[i + 1] = Math.min(255, Math.floor(targetColor.g * brightness * 0.6));
+        d[i + 2] = Math.min(255, Math.floor(targetColor.b * brightness * 0.6));
+      }
+    }
+    offCtx.putImageData(imageData, 0, 0);
+  }
+
+  coloredCarCache[key] = offCanvas;
+  return offCanvas;
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return { r, g, b };
+}
 
 // ========================================
 // ゲーム状態
 // ========================================
-let gameState = "title";   // title, modeSelect, carSelect, courseSelect, countdown, race, result, grandprixResult
-let gameMode = "single";   // single, multi
+let gameState = "title";
+let gameMode = "single";
 let selectedCar = 0;
-let selectedCar2 = 0;      // 2P用
+let selectedCar2 = 0;
 let selectedCourse = 0;
-let currentGPCourse = 0;   // グランプリの現在のコース
-let gpResults = [];         // グランプリの各レース結果
+let currentGPCourse = 0;
+let gpResults = [];
 
-// コースの補間ポイント（レース開始時に生成）
 let coursePoints = [];
 const COURSE_RESOLUTION = 20;
 
 // ========================================
 // 車オブジェクト生成
 // ========================================
-function createCar(dataIndex, isPlayer, playerId) {
+function createCar(dataIndex, isPlayer, playerId, colorIdx) {
   const d = CAR_DATA[dataIndex];
   return {
     dataIndex,
     isPlayer,
-    playerId: playerId || 0,  // 0=1P, 1=2P
+    playerId: playerId || 0,
+    colorIndex: colorIdx != null ? colorIdx : 0,
     x: 0, y: 0,
     angle: 0,
     speed: 0,
@@ -59,17 +146,15 @@ function createCar(dataIndex, isPlayer, playerId) {
     specialTimer: 0,
     specialActive: false,
     specialDuration: 0,
-    // パラメータから実値を計算
     maxSpeed:     1.5 + d.speed * 0.45,
     accelRate:    0.03 + d.accel * 0.018,
     brakeRate:    0.04 + d.brake * 0.015,
-    offroadRate:  0.3 + d.offroad * 0.07,   // オフロードでの速度維持率
+    offroadRate:  0.3 + d.offroad * 0.07,
     attackPower:  d.attack,
     durability:   d.durability,
     handleRate:   0.015 + d.handling * 0.005,
-    // AI用
     aiTargetWP: 0,
-    aiVariance: (Math.random() - 0.5) * 0.3, // 個体差
+    aiVariance: (Math.random() - 0.5) * 0.3,
   };
 }
 
@@ -84,30 +169,74 @@ const keys = {};
 window.addEventListener("keydown", (e) => { keys[e.key] = true; e.preventDefault(); });
 window.addEventListener("keyup", (e) => { keys[e.key] = false; });
 
+let keyLock = {};
+function onKeyOnce(key) {
+  if (keys[key] && !keyLock[key]) { keyLock[key] = true; return true; }
+  if (!keys[key]) keyLock[key] = false;
+  return false;
+}
+
+// ========================================
+// FC風テキスト描画ユーティリティ
+// ========================================
+function fcText(text, x, y, color, size, align) {
+  ctx.fillStyle = color || FC_WHITE;
+  ctx.font = `bold ${size || 16}px monospace`;
+  ctx.textAlign = align || "left";
+  ctx.fillText(text, x, y);
+}
+
+function fcTextWithShadow(text, x, y, color, size, align) {
+  ctx.fillStyle = FC_BLACK;
+  ctx.font = `bold ${size || 16}px monospace`;
+  ctx.textAlign = align || "left";
+  ctx.fillText(text, x + 2, y + 2);
+  ctx.fillStyle = color || FC_WHITE;
+  ctx.fillText(text, x, y);
+}
+
+// FC風のウィンドウ枠
+function fcWindow(x, y, w, h, borderColor) {
+  ctx.fillStyle = FC_BLACK;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = borderColor || FC_WHITE;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+}
+
+// FC風パラメータバー
+function fcParamBar(x, y, w, val, maxVal, color) {
+  ctx.fillStyle = FC_DKGRAY;
+  ctx.fillRect(x, y, w, 10);
+  ctx.fillStyle = color || FC_GREEN;
+  ctx.fillRect(x, y, w * (val / maxVal), 10);
+  ctx.strokeStyle = FC_WHITE;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, w, 10);
+}
+
 // ========================================
 // コース描画
 // ========================================
 function drawCourse(course) {
-  // 背景
   ctx.fillStyle = course.bgColor;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
 
-  // 路面タイプごとの色
   const surfaceColors = {
     road: course.roadColor,
-    offroad: "#a08050",
-    ice: "#c8e0f0",
+    offroad: "#9a7d50",
+    ice: "#c0dae8",
   };
 
-  // コースを描画（セグメントごとに路面色を変える）
   const pts = coursePoints;
-  const w = course.roadWidth;
+  const rw = course.roadWidth;
 
+  // コース外側ライン（壁）
   for (let i = 0; i < pts.length; i++) {
     const p1 = pts[i];
     const p2 = pts[(i + 1) % pts.length];
-    ctx.strokeStyle = surfaceColors[p1.surface] || course.roadColor;
-    ctx.lineWidth = w;
+    ctx.strokeStyle = course.wallColor || "#c03030";
+    ctx.lineWidth = rw + 8;
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
@@ -115,10 +244,23 @@ function drawCourse(course) {
     ctx.stroke();
   }
 
-  // コース境界線
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 8]);
+  // コース路面
+  for (let i = 0; i < pts.length; i++) {
+    const p1 = pts[i];
+    const p2 = pts[(i + 1) % pts.length];
+    ctx.strokeStyle = surfaceColors[p1.surface] || course.roadColor;
+    ctx.lineWidth = rw;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  }
+
+  // 白い点線（中央分離線）
+  ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 8]);
   ctx.beginPath();
   for (let i = 0; i <= pts.length; i++) {
     const p = pts[i % pts.length];
@@ -129,34 +271,38 @@ function drawCourse(course) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // スタート/ゴールライン
+  // スタート/ゴールライン（チェッカーフラッグ風）
   const sp = pts[0];
   const sp2 = pts[1];
   const lineAngle = Math.atan2(sp2.y - sp.y, sp2.x - sp.x) + Math.PI / 2;
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(sp.x + Math.cos(lineAngle) * w / 2, sp.y + Math.sin(lineAngle) * w / 2);
-  ctx.lineTo(sp.x - Math.cos(lineAngle) * w / 2, sp.y - Math.sin(lineAngle) * w / 2);
-  ctx.stroke();
+  const hw = rw / 2;
+  for (let s = -hw; s < hw; s += 8) {
+    const row = Math.floor((s + hw) / 8);
+    for (let t = -4; t < 4; t += 8) {
+      const col = Math.floor((t + 4) / 8);
+      ctx.fillStyle = (row + col) % 2 === 0 ? "#fff" : "#000";
+      ctx.save();
+      ctx.translate(sp.x, sp.y);
+      ctx.rotate(lineAngle);
+      ctx.fillRect(t, s, 8, 8);
+      ctx.restore();
+    }
+  }
 
-  // 路面テクスチャの装飾
-  drawSurfaceDecoration(course);
-}
-
-function drawSurfaceDecoration(course) {
-  // オフロードの小石や氷の模様を簡易描画
-  const pts = coursePoints;
-  for (let i = 0; i < pts.length; i += 5) {
+  // 路面装飾
+  for (let i = 0; i < pts.length; i += 4) {
     const p = pts[i];
     if (p.surface === "offroad") {
-      ctx.fillStyle = "rgba(80,60,30,0.3)";
-      ctx.fillRect(p.x - 2 + Math.sin(i) * 10, p.y - 1 + Math.cos(i) * 8, 3, 2);
+      ctx.fillStyle = "rgba(60,40,15,0.25)";
+      for (let j = 0; j < 3; j++) {
+        ctx.fillRect(p.x - 3 + Math.sin(i + j * 7) * 20, p.y - 1 + Math.cos(i + j * 5) * 15, 2, 2);
+      }
     } else if (p.surface === "ice") {
-      ctx.fillStyle = "rgba(255,255,255,0.4)";
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
       ctx.beginPath();
-      ctx.arc(p.x + Math.sin(i * 3) * 15, p.y + Math.cos(i * 2) * 12, 2, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(p.x + Math.sin(i) * 18, p.y + Math.cos(i) * 14);
+      ctx.lineTo(p.x + Math.sin(i) * 18 + 5, p.y + Math.cos(i) * 14 + 2);
+      ctx.stroke();
     }
   }
 }
@@ -165,46 +311,45 @@ function drawSurfaceDecoration(course) {
 // 車描画
 // ========================================
 function drawCar(c) {
-  const img = carImages[c.dataIndex];
+  const coloredImg = getColoredCar(c.dataIndex, c.colorIndex);
   ctx.save();
   ctx.translate(c.x, c.y);
   ctx.rotate(c.angle + Math.PI / 2);
   ctx.imageSmoothingEnabled = false;
 
-  if (img && img.complete && img.naturalWidth > 0) {
-    const w = img.naturalWidth * SCALE;
-    const h = img.naturalHeight * SCALE;
-    // スペシャル発動中は光る
+  if (coloredImg) {
+    const w = coloredImg.width * SCALE;
+    const h = coloredImg.height * SCALE;
     if (c.specialActive) {
-      ctx.shadowColor = "#ff0";
-      ctx.shadowBlur = 15;
+      ctx.shadowColor = FC_YELLOW;
+      ctx.shadowBlur = 12;
     }
-    // ダメージで赤くフラッシュ
-    if (c.hp < MAX_HP * 0.3) {
-      ctx.globalAlpha = 0.6 + Math.sin(raceTimer * 0.3) * 0.4;
+    if (c.hp <= 0) {
+      ctx.globalAlpha = 0.3;
+    } else if (c.hp < MAX_HP * 0.3) {
+      ctx.globalAlpha = 0.5 + Math.sin(raceTimer * 0.4) * 0.5;
     }
-    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    ctx.drawImage(coloredImg, -w / 2, -h / 2, w, h);
   } else {
-    ctx.fillStyle = c.isPlayer ? "#e33" : "#33e";
-    ctx.fillRect(-12, -18, 24, 36);
+    ctx.fillStyle = c.isPlayer ? FC_RED : FC_BLUE;
+    ctx.fillRect(-6, -9, 12, 18);
   }
-
   ctx.restore();
 
-  // HPバー（レース中）
-  if (gameState === "race") {
-    const barW = 30;
-    const barH = 4;
-    const hpRatio = c.hp / MAX_HP;
-    ctx.fillStyle = "#300";
-    ctx.fillRect(c.x - barW / 2, c.y - 25, barW, barH);
-    ctx.fillStyle = hpRatio > 0.5 ? "#0c0" : hpRatio > 0.25 ? "#cc0" : "#c00";
-    ctx.fillRect(c.x - barW / 2, c.y - 25, barW * hpRatio, barH);
+  // HPバー
+  if (gameState === "race" || gameState === "countdown") {
+    const barW = 22;
+    const barH = 3;
+    const hpR = c.hp / MAX_HP;
+    ctx.fillStyle = FC_DKGRAY;
+    ctx.fillRect(c.x - barW / 2, c.y - 16, barW, barH);
+    ctx.fillStyle = hpR > 0.5 ? FC_GREEN : hpR > 0.25 ? FC_YELLOW : FC_RED;
+    ctx.fillRect(c.x - barW / 2, c.y - 16, barW * hpR, barH);
   }
 }
 
 // ========================================
-// 路面の効果を取得
+// 路面判定
 // ========================================
 function getSurfaceAt(x, y) {
   let minDist = Infinity;
@@ -212,10 +357,7 @@ function getSurfaceAt(x, y) {
   for (let i = 0; i < coursePoints.length; i++) {
     const p = coursePoints[i];
     const d = (p.x - x) ** 2 + (p.y - y) ** 2;
-    if (d < minDist) {
-      minDist = d;
-      surface = p.surface;
-    }
+    if (d < minDist) { minDist = d; surface = p.surface; }
   }
   const course = COURSES[selectedCourse];
   const onRoad = minDist < (course.roadWidth / 2 + 5) ** 2;
@@ -223,28 +365,17 @@ function getSurfaceAt(x, y) {
 }
 
 // ========================================
-// 車の更新（プレイヤー）
+// プレイヤー車更新
 // ========================================
 function updatePlayerCar(c, upKey, downKey, leftKey, rightKey, specialKey) {
   if (c.finished || c.hp <= 0) return;
 
   const surf = getSurfaceAt(c.x, c.y);
-  let frictionMul = 1;
-  let turnMul = 1;
+  let frictionMul = 1, turnMul = 1;
+  if (surf.surface === "grass")   { frictionMul = 0.4; turnMul = 0.6; }
+  else if (surf.surface === "offroad") { frictionMul = 0.5 + c.offroadRate * 0.5; turnMul = 0.8; }
+  else if (surf.surface === "ice")     { frictionMul = 1.05; turnMul = 0.35; }
 
-  // 路面効果
-  if (surf.surface === "grass") {
-    frictionMul = 0.4;
-    turnMul = 0.6;
-  } else if (surf.surface === "offroad") {
-    frictionMul = 0.5 + c.offroadRate * 0.5;
-    turnMul = 0.8;
-  } else if (surf.surface === "ice") {
-    frictionMul = 1.05; // 氷は減速しにくいが…
-    turnMul = 0.35;     // 曲がりにくい
-  }
-
-  // アクセル
   if (keys[upKey]) {
     c.speed = Math.min(c.speed + c.accelRate * frictionMul, c.maxSpeed * frictionMul);
   } else if (keys[downKey]) {
@@ -254,18 +385,16 @@ function updatePlayerCar(c, upKey, downKey, leftKey, rightKey, specialKey) {
     if (c.speed < 0) c.speed = Math.min(c.speed + 0.02, 0);
   }
 
-  // ステアリング
   if (Math.abs(c.speed) > 0.05) {
     const dir = c.speed > 0 ? 1 : -1;
     if (keys[leftKey]) c.angle -= c.handleRate * turnMul * dir;
     if (keys[rightKey]) c.angle += c.handleRate * turnMul * dir;
   }
 
-  // スペシャル
   if (c.specialTimer > 0) c.specialTimer--;
   if (keys[specialKey] && c.specialTimer <= 0 && !c.specialActive) {
     c.specialActive = true;
-    c.specialDuration = 90; // 1.5秒
+    c.specialDuration = 90;
     c.specialTimer = SPECIAL_COOLDOWN;
   }
   if (c.specialActive) {
@@ -274,46 +403,35 @@ function updatePlayerCar(c, upKey, downKey, leftKey, rightKey, specialKey) {
     if (c.specialDuration <= 0) c.specialActive = false;
   }
 
-  // 位置更新
   c.x += Math.cos(c.angle) * c.speed;
   c.y += Math.sin(c.angle) * c.speed;
 
-  // 画面端バウンド
   if (c.x < 10) { c.x = 10; c.speed *= -0.3; }
-  if (c.x > canvas.width - 10) { c.x = canvas.width - 10; c.speed *= -0.3; }
+  if (c.x > W - 10) { c.x = W - 10; c.speed *= -0.3; }
   if (c.y < 10) { c.y = 10; c.speed *= -0.3; }
-  if (c.y > canvas.height - 10) { c.y = canvas.height - 10; c.speed *= -0.3; }
+  if (c.y > H - 10) { c.y = H - 10; c.speed *= -0.3; }
 
   updateCheckpoint(c);
 }
 
 // ========================================
-// AI車の更新
+// AI車更新
 // ========================================
 function updateAICar(c) {
   if (c.finished || c.hp <= 0) return;
 
   const surf = getSurfaceAt(c.x, c.y);
-  let frictionMul = 1;
-  let turnMul = 1;
-
+  let frictionMul = 1, turnMul = 1;
   if (surf.surface === "grass") { frictionMul = 0.4; turnMul = 0.6; }
   else if (surf.surface === "offroad") { frictionMul = 0.5 + c.offroadRate * 0.5; turnMul = 0.8; }
   else if (surf.surface === "ice") { frictionMul = 1.05; turnMul = 0.35; }
 
-  // ターゲットウェイポイントに向かう
   const target = coursePoints[c.aiTargetWP];
-  const dx = target.x - c.x;
-  const dy = target.y - c.y;
+  const dx = target.x - c.x, dy = target.y - c.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
   const targetAngle = Math.atan2(dy, dx);
+  if (dist < 40) c.aiTargetWP = (c.aiTargetWP + 1) % coursePoints.length;
 
-  // 目標に近づいたら次のウェイポイントへ
-  if (dist < 40) {
-    c.aiTargetWP = (c.aiTargetWP + 1) % coursePoints.length;
-  }
-
-  // 角度差を計算して操舵
   let angleDiff = targetAngle - c.angle;
   while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
   while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
@@ -322,47 +440,35 @@ function updateAICar(c) {
   if (angleDiff > 0.05) c.angle += Math.min(turnRate, angleDiff);
   else if (angleDiff < -0.05) c.angle += Math.max(-turnRate, angleDiff);
 
-  // 速度制御（カーブではやや減速）
   const speedFactor = 1 - Math.min(Math.abs(angleDiff) * 0.5, 0.5);
   const targetSpeed = c.maxSpeed * frictionMul * speedFactor * (0.85 + c.aiVariance * 0.3);
-  if (c.speed < targetSpeed) {
-    c.speed = Math.min(c.speed + c.accelRate * frictionMul * 0.9, targetSpeed);
-  } else {
-    c.speed = Math.max(c.speed - c.brakeRate * 0.5, targetSpeed * 0.7);
-  }
+  if (c.speed < targetSpeed) c.speed = Math.min(c.speed + c.accelRate * frictionMul * 0.9, targetSpeed);
+  else c.speed = Math.max(c.speed - c.brakeRate * 0.5, targetSpeed * 0.7);
 
-  // 位置更新
   c.x += Math.cos(c.angle) * c.speed;
   c.y += Math.sin(c.angle) * c.speed;
-
-  // 画面端
-  c.x = Math.max(10, Math.min(canvas.width - 10, c.x));
-  c.y = Math.max(10, Math.min(canvas.height - 10, c.y));
+  c.x = Math.max(10, Math.min(W - 10, c.x));
+  c.y = Math.max(10, Math.min(H - 10, c.y));
 
   updateCheckpoint(c);
 }
 
 // ========================================
-// チェックポイント・ラップ管理
+// チェックポイント・ラップ
 // ========================================
 function updateCheckpoint(c) {
   const totalCP = coursePoints.length;
-  const checkInterval = Math.floor(totalCP / 8); // 8つのチェックポイント
+  const checkInterval = Math.floor(totalCP / 8);
   const nextCP = (c.checkpoint + 1) % 8;
   const nextCPIndex = nextCP * checkInterval;
-
   if (nextCPIndex < totalCP) {
     const cp = coursePoints[nextCPIndex];
-    const dx = cp.x - c.x;
-    const dy = cp.y - c.y;
-    if (dx * dx + dy * dy < 50 * 50) {
+    const dx = cp.x - c.x, dy = cp.y - c.y;
+    if (dx * dx + dy * dy < 60 * 60) {
       c.checkpoint = nextCP;
       if (nextCP === 0) {
         c.lap++;
-        if (c.lap >= TOTAL_LAPS) {
-          c.finished = true;
-          c.finishTime = raceTimer;
-        }
+        if (c.lap >= TOTAL_LAPS) { c.finished = true; c.finishTime = raceTimer; }
       }
     }
   }
@@ -374,109 +480,82 @@ function updateCheckpoint(c) {
 function checkCollisions() {
   for (let i = 0; i < cars.length; i++) {
     for (let j = i + 1; j < cars.length; j++) {
-      const a = cars[i];
-      const b = cars[j];
+      const a = cars[i], b = cars[j];
       if (a.hp <= 0 || b.hp <= 0) continue;
-
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
+      const dx = b.x - a.x, dy = b.y - a.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const minDist = 20; // 衝突距離
-
+      const minDist = 16;
       if (dist < minDist && dist > 0) {
-        // 押し出し
         const overlap = minDist - dist;
-        const nx = dx / dist;
-        const ny = dy / dist;
-        a.x -= nx * overlap * 0.5;
-        a.y -= ny * overlap * 0.5;
-        b.x += nx * overlap * 0.5;
-        b.y += ny * overlap * 0.5;
-
-        // ダメージ判定: 前方からの衝突はダメージなし、側面・後方はダメージあり
+        const nx = dx / dist, ny = dy / dist;
+        a.x -= nx * overlap * 0.5; a.y -= ny * overlap * 0.5;
+        b.x += nx * overlap * 0.5; b.y += ny * overlap * 0.5;
         applyCollisionDamage(a, b, nx, ny);
         applyCollisionDamage(b, a, -nx, -ny);
-
-        // 速度交換
-        const relSpeed = Math.abs(a.speed - b.speed);
-        a.speed *= 0.6;
-        b.speed *= 0.6;
+        a.speed *= 0.6; b.speed *= 0.6;
       }
     }
   }
 }
 
 function applyCollisionDamage(victim, attacker, nx, ny) {
-  // victimから見た衝突方向の角度
   const hitAngle = Math.atan2(ny, nx);
   let relAngle = hitAngle - victim.angle;
   while (relAngle > Math.PI) relAngle -= Math.PI * 2;
   while (relAngle < -Math.PI) relAngle += Math.PI * 2;
-
-  // 前方（±45度）からの衝突はダメージ無し
   if (Math.abs(relAngle) < Math.PI / 4) return;
-
-  // ダメージ計算: 攻撃力 vs 耐久力
   const dmg = Math.max(1, attacker.attackPower - victim.durability * 0.3);
   const specialBonus = attacker.specialActive ? 2.5 : 1;
-  victim.hp -= dmg * specialBonus;
-  if (victim.hp < 0) victim.hp = 0;
+  victim.hp = Math.max(0, victim.hp - dmg * specialBonus);
 }
 
 // ========================================
-// レースの初期化
+// レース初期化
 // ========================================
 function initRace() {
   const course = COURSES[selectedCourse];
   coursePoints = getCoursePoints(course, COURSE_RESOLUTION);
   cars = [];
+  // カラーキャッシュクリア
+  Object.keys(coloredCarCache).forEach(k => delete coloredCarCache[k]);
 
-  // スタート位置の計算
-  const startPt = coursePoints[0];
-  const nextPt = coursePoints[1];
+  const startPt = coursePoints[0], nextPt = coursePoints[1];
   const startAngle = Math.atan2(nextPt.y - startPt.y, nextPt.x - startPt.x);
   const perpAngle = startAngle + Math.PI / 2;
 
-  // 1P
-  const p1 = createCar(selectedCar, true, 0);
+  const p1 = createCar(selectedCar, true, 0, playerColor1);
   p1.x = startPt.x - Math.cos(startAngle) * 30;
   p1.y = startPt.y - Math.sin(startAngle) * 30;
   p1.angle = startAngle;
   cars.push(p1);
 
-  // 2P（マルチの場合）
   if (gameMode === "multi") {
-    const p2 = createCar(selectedCar2, true, 1);
+    const p2 = createCar(selectedCar2, true, 1, playerColor2);
     p2.x = startPt.x - Math.cos(startAngle) * 30 + Math.cos(perpAngle) * 25;
     p2.y = startPt.y - Math.sin(startAngle) * 30 + Math.sin(perpAngle) * 25;
     p2.angle = startAngle;
     cars.push(p2);
   }
 
-  // AI車
   const usedIndices = [selectedCar];
   if (gameMode === "multi") usedIndices.push(selectedCar2);
-
   for (let i = 0; i < AI_COUNT; i++) {
     let aiIndex;
-    do {
-      aiIndex = Math.floor(Math.random() * CAR_DATA.length);
-    } while (usedIndices.includes(aiIndex));
+    do { aiIndex = Math.floor(Math.random() * CAR_DATA.length); } while (usedIndices.includes(aiIndex));
     usedIndices.push(aiIndex);
-
-    const ai = createCar(aiIndex, false, -1);
+    const aiColor = Math.floor(Math.random() * BODY_COLORS.length);
+    const ai = createCar(aiIndex, false, -1, aiColor);
     const row = Math.floor((i + (gameMode === "multi" ? 2 : 1)) / 3);
     const col = (i + (gameMode === "multi" ? 2 : 1)) % 3;
     ai.x = startPt.x - Math.cos(startAngle) * (50 + row * 35) + Math.cos(perpAngle) * (col - 1) * 25;
     ai.y = startPt.y - Math.sin(startAngle) * (50 + row * 35) + Math.sin(perpAngle) * (col - 1) * 25;
     ai.angle = startAngle;
-    // AIの初期ウェイポイントを設定
     ai.aiTargetWP = 2;
     cars.push(ai);
   }
 
   raceTimer = 0;
-  countdownTimer = 180; // 3秒カウントダウン
+  countdownTimer = 180;
   gameState = "countdown";
 }
 
@@ -485,39 +564,21 @@ function initRace() {
 // ========================================
 function updateRace() {
   raceTimer++;
-
-  // 1P操作
   updatePlayerCar(cars[0], "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "z");
-
-  // 2P操作
   if (gameMode === "multi" && cars.length > 1 && cars[1].isPlayer) {
     updatePlayerCar(cars[1], "w", "s", "a", "d", "q");
   }
-
-  // AI
-  for (const c of cars) {
-    if (!c.isPlayer) updateAICar(c);
-  }
-
-  // 衝突
+  for (const c of cars) { if (!c.isPlayer) updateAICar(c); }
   checkCollisions();
 
-  // 全車ゴールチェック
-  const allFinished = cars.every(c => c.finished || c.hp <= 0);
-  if (allFinished || cars.filter(c => c.isPlayer).every(c => c.finished || c.hp <= 0)) {
-    // 少し待ってからリザルトへ
+  const playersFinished = cars.filter(c => c.isPlayer).every(c => c.finished || c.hp <= 0);
+  if (playersFinished) {
     if (!cars._resultDelay) cars._resultDelay = 60;
     cars._resultDelay--;
-    if (cars._resultDelay <= 0) {
-      cars._resultDelay = undefined;
-      gameState = "result";
-    }
+    if (cars._resultDelay <= 0) { cars._resultDelay = undefined; gameState = "result"; }
   }
 }
 
-// ========================================
-// 順位計算
-// ========================================
 function getRankings() {
   return [...cars].sort((a, b) => {
     if (a.finished && !b.finished) return -1;
@@ -525,510 +586,438 @@ function getRankings() {
     if (a.finished && b.finished) return a.finishTime - b.finishTime;
     if (a.hp <= 0 && b.hp > 0) return 1;
     if (a.hp > 0 && b.hp <= 0) return -1;
-    // ラップとチェックポイントで比較
     if (a.lap !== b.lap) return b.lap - a.lap;
     return b.checkpoint - a.checkpoint;
   });
 }
 
 // ========================================
-// 描画: タイトル画面
+// タイトル画面（FC風）
 // ========================================
 function drawTitle() {
-  ctx.fillStyle = "#0a0a1a";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = FC_BLACK;
+  ctx.fillRect(0, 0, W, H);
 
-  // 背景装飾
-  for (let i = 0; i < 20; i++) {
-    ctx.fillStyle = `rgba(255,200,0,${0.03 + Math.sin(raceTimer * 0.02 + i) * 0.02})`;
-    ctx.fillRect(Math.sin(i * 1.7) * 300 + 400, Math.cos(i * 2.3) * 200 + 300, 60, 3);
+  // 装飾ライン
+  ctx.strokeStyle = FC_RED;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(30, 30, W - 60, H - 60);
+  ctx.strokeStyle = FC_YELLOW;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(36, 36, W - 72, H - 72);
+
+  // タイトルロゴ
+  fcTextWithShadow("激 突 四 駆", W / 2, 250, FC_YELLOW, 64, "center");
+  fcTextWithShadow("R  E", W / 2, 330, FC_RED, 72, "center");
+
+  // サブタイトル
+  fcText("GEKITOTSU YONKU RE", W / 2, 400, FC_CYAN, 18, "center");
+
+  // 点滅テキスト
+  if (Math.floor(raceTimer / 30) % 2 === 0) {
+    fcText("- PRESS ENTER -", W / 2, 520, FC_WHITE, 22, "center");
   }
 
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#ff0";
-  ctx.font = "bold 42px monospace";
-  ctx.fillText("激突四駆RE", canvas.width / 2, 180);
-
-  ctx.fillStyle = "#fff";
-  ctx.font = "16px monospace";
-  ctx.fillText("GEKITOTSU YONKU RE", canvas.width / 2, 220);
-
-  ctx.fillStyle = "#aaa";
-  ctx.font = "18px monospace";
-  ctx.fillText("Press ENTER to Start", canvas.width / 2, 350);
-
-  // ミニ四駆のサムネイルアニメーション
-  const t = raceTimer * 0.01;
-  for (let i = 0; i < 6; i++) {
-    const idx = (Math.floor(t) + i) % CAR_DATA.length;
-    const img = carImages[idx];
-    if (img && img.complete && img.naturalWidth > 0) {
+  // 下部にマシンスクロール
+  const t = raceTimer * 0.5;
+  for (let i = 0; i < 10; i++) {
+    const idx = Math.floor((t / 60 + i) % CAR_DATA.length);
+    const img = getColoredCar(idx, i % BODY_COLORS.length);
+    if (img) {
       ctx.imageSmoothingEnabled = false;
-      const px = 130 + i * 110;
-      ctx.drawImage(img, px, 420, img.naturalWidth * 2, img.naturalHeight * 2);
+      const px = ((t + i * 120) % (W + 100)) - 50;
+      ctx.drawImage(img, px, 660, img.width * 2, img.height * 2);
       ctx.imageSmoothingEnabled = true;
     }
   }
 
-  ctx.textAlign = "start";
+  fcText("© GEKITOTSU YONKU RE", W / 2, H - 50, FC_DKGRAY, 12, "center");
   raceTimer++;
 }
 
 // ========================================
-// 描画: モード選択
+// モード選択
 // ========================================
 let modeSelectIdx = 0;
 function drawModeSelect() {
-  ctx.fillStyle = "#0a0a1a";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = FC_BLACK;
+  ctx.fillRect(0, 0, W, H);
 
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 28px monospace";
-  ctx.fillText("モード選択", canvas.width / 2, 120);
+  fcWindow(200, 80, W - 400, 100, FC_CYAN);
+  fcTextWithShadow("モード セレクト", W / 2, 140, FC_CYAN, 32, "center");
 
   const modes = [
-    { label: "1人用グランプリ", desc: "6コースを連続で走るグランプリモード" },
-    { label: "1人用フリーレース", desc: "好きなコースで1レース" },
-    { label: "2人対戦", desc: "2人で対戦！（1P:矢印+Z  2P:WASD+Q）" },
+    { label: "グランプリ",     desc: "6コースを勝ち抜け！" },
+    { label: "フリーレース",   desc: "好きなコースで1レース" },
+    { label: "2Pたいせん",     desc: "ふたりでバトル！" },
   ];
 
   modes.forEach((m, i) => {
-    const y = 220 + i * 90;
-    if (i === modeSelectIdx) {
-      ctx.fillStyle = "rgba(255,200,0,0.15)";
-      ctx.fillRect(200, y - 25, 400, 65);
-      ctx.fillStyle = "#ff0";
-    } else {
-      ctx.fillStyle = "#888";
-    }
-    ctx.font = "bold 20px monospace";
-    ctx.fillText(m.label, canvas.width / 2, y);
-    ctx.font = "13px monospace";
-    ctx.fillStyle = i === modeSelectIdx ? "#ccc" : "#555";
-    ctx.fillText(m.desc, canvas.width / 2, y + 25);
+    const y = 260 + i * 110;
+    fcWindow(250, y - 30, W - 500, 85, i === modeSelectIdx ? FC_YELLOW : FC_DKGRAY);
+    const cursor = i === modeSelectIdx ? "▶ " : "  ";
+    fcText(cursor + m.label, 290, y + 10, i === modeSelectIdx ? FC_YELLOW : "#606060", 24);
+    fcText(m.desc, 310, y + 38, i === modeSelectIdx ? FC_WHITE : "#404040", 14);
   });
 
-  ctx.textAlign = "start";
+  fcText("↑↓:えらぶ  Enter:けってい  ESC:もどる", W / 2, H - 60, FC_DKGRAY, 14, "center");
 }
 
 // ========================================
-// 描画: マシン選択
+// マシン選択
 // ========================================
-let selectingPlayer = 0; // 0=1P, 1=2P
+let selectingPlayer = 0;
+let colorSelectMode = false;
+
 function drawCarSelect() {
-  ctx.fillStyle = "#1a1a2e";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = FC_BLACK;
+  ctx.fillRect(0, 0, W, H);
 
-  ctx.textAlign = "center";
   const sel = selectingPlayer === 0 ? selectedCar : selectedCar2;
-  const playerLabel = gameMode === "multi" ? `${selectingPlayer + 1}P マシン選択` : "マシン選択";
+  const colIdx = selectingPlayer === 0 ? playerColor1 : playerColor2;
+  const plabel = gameMode === "multi" ? `${selectingPlayer + 1}P` : "";
 
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 22px monospace";
-  ctx.fillText(playerLabel, canvas.width / 2, 40);
+  // ヘッダー
+  fcWindow(100, 20, W - 200, 50, FC_CYAN);
+  fcTextWithShadow(`${plabel} マシン セレクト`, W / 2, 55, FC_CYAN, 26, "center");
 
-  // 選択中の車
-  const img = carImages[sel];
-  if (img && img.complete && img.naturalWidth > 0) {
+  // 選択中の車を大きく表示
+  const img = getColoredCar(sel, colIdx);
+  if (img) {
     ctx.imageSmoothingEnabled = false;
-    const dw = img.naturalWidth * 5;
-    const dh = img.naturalHeight * 5;
-    ctx.drawImage(img, canvas.width / 2 - dw / 2, 60, dw, dh);
+    const dw = img.width * 6;
+    const dh = img.height * 6;
+    ctx.drawImage(img, W / 2 - dw / 2, 90, dw, dh);
     ctx.imageSmoothingEnabled = true;
   }
 
   // 車名
-  ctx.fillStyle = "#ff0";
-  ctx.font = "bold 16px monospace";
-  ctx.fillText(CAR_DATA[sel].name, canvas.width / 2, 200);
+  fcTextWithShadow(CAR_DATA[sel].name, W / 2, 250, FC_YELLOW, 20, "center");
 
-  // パラメータバー
+  // カラー表示
+  const cc = BODY_COLORS[colIdx];
+  ctx.fillStyle = cc.color;
+  ctx.fillRect(W / 2 - 70, 262, 20, 14);
+  fcText(`COLOR: ${cc.name}`, W / 2 - 45, 274, colorSelectMode ? FC_YELLOW : FC_WHITE, 13);
+  if (colorSelectMode) {
+    fcText("← → でカラー変更  Enter:もどる", W / 2, 296, FC_CYAN, 12, "center");
+  } else {
+    fcText("C: カラー変更", W / 2 + 80, 274, FC_DKGRAY, 12);
+  }
+
+  // パラメータ（FC風）
+  fcWindow(280, 310, W - 560, 200, FC_WHITE);
   const params = [
-    { label: "スピード", val: CAR_DATA[sel].speed },
-    { label: "加速",     val: CAR_DATA[sel].accel },
-    { label: "ブレーキ", val: CAR_DATA[sel].brake },
-    { label: "オフロード", val: CAR_DATA[sel].offroad },
-    { label: "攻撃力",   val: CAR_DATA[sel].attack },
-    { label: "耐久力",   val: CAR_DATA[sel].durability },
-    { label: "ハンドル", val: CAR_DATA[sel].handling },
+    { label: "スピード",   val: CAR_DATA[sel].speed,      col: FC_RED },
+    { label: "かそく",     val: CAR_DATA[sel].accel,      col: FC_ORANGE },
+    { label: "ブレーキ",   val: CAR_DATA[sel].brake,      col: FC_BLUE },
+    { label: "オフロード", val: CAR_DATA[sel].offroad,    col: FC_GREEN },
+    { label: "こうげき",   val: CAR_DATA[sel].attack,     col: FC_RED },
+    { label: "たいきゅう", val: CAR_DATA[sel].durability, col: FC_CYAN },
+    { label: "ハンドル",   val: CAR_DATA[sel].handling,   col: FC_YELLOW },
   ];
 
-  ctx.textAlign = "right";
   params.forEach((p, i) => {
-    const y = 230 + i * 22;
-    ctx.fillStyle = "#aaa";
-    ctx.font = "13px monospace";
-    ctx.fillText(p.label, 340, y);
-    // バー背景
-    ctx.fillStyle = "#333";
-    ctx.fillRect(350, y - 10, 120, 12);
-    // バー
-    ctx.fillStyle = p.val >= 8 ? "#f80" : p.val >= 5 ? "#0a0" : "#08a";
-    ctx.fillRect(350, y - 10, 12 * p.val, 12);
+    const y = 335 + i * 24;
+    fcText(p.label, 310, y, FC_WHITE, 14);
+    fcParamBar(440, y - 10, 140, p.val, 10, p.col);
+    fcText(`${p.val}`, 590, y, FC_WHITE, 13);
   });
 
   // サムネイル一覧
-  ctx.textAlign = "center";
-  const thumbScale = 2;
   const cols = 13;
-  const spacing = 28;
-  const startX = canvas.width / 2 - (cols * spacing) / 2;
+  const spacing = 34;
+  const startX = W / 2 - (cols * spacing) / 2;
   for (let row = 0; row < 2; row++) {
     for (let col = 0; col < cols; col++) {
       const idx = row * cols + col;
       if (idx >= CAR_DATA.length) break;
-      const tx = startX + col * spacing + 6;
-      const ty = 420 + row * 38;
+      const tx = startX + col * spacing + 4;
+      const ty = 540 + row * 44;
       if (idx === sel) {
-        ctx.strokeStyle = "#ff0";
+        ctx.strokeStyle = FC_YELLOW;
         ctx.lineWidth = 2;
-        ctx.strokeRect(tx - 3, ty - 3, 22, 28);
+        ctx.strokeRect(tx - 3, ty - 3, 26, 32);
       }
-      const tImg = carImages[idx];
-      if (tImg && tImg.complete && tImg.naturalWidth > 0) {
+      const tImg = getColoredCar(idx, idx === sel ? colIdx : 0);
+      if (tImg) {
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(tImg, tx, ty, tImg.naturalWidth * thumbScale, tImg.naturalHeight * thumbScale);
+        ctx.drawImage(tImg, tx, ty, tImg.width * 2, tImg.height * 2);
         ctx.imageSmoothingEnabled = true;
       }
     }
   }
 
-  ctx.fillStyle = "#888";
-  ctx.font = "13px monospace";
-  ctx.fillText("←→: 選択  Enter: 決定  ESC: 戻る", canvas.width / 2, 550);
-  ctx.fillText(`${sel + 1} / ${CAR_DATA.length}`, canvas.width / 2, 570);
-  ctx.textAlign = "start";
+  fcText(`${sel + 1} / ${CAR_DATA.length}`, W / 2, 650, FC_DKGRAY, 14, "center");
+  fcText("←→:えらぶ  C:カラー  Enter:けってい  ESC:もどる", W / 2, H - 40, FC_DKGRAY, 13, "center");
 }
 
 // ========================================
-// 描画: コース選択
+// コース選択
 // ========================================
 function drawCourseSelect() {
-  ctx.fillStyle = "#1a1a2e";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = FC_BLACK;
+  ctx.fillRect(0, 0, W, H);
 
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 22px monospace";
-  ctx.fillText("コース選択", canvas.width / 2, 50);
+  fcWindow(200, 20, W - 400, 50, FC_CYAN);
+  fcTextWithShadow("コース セレクト", W / 2, 55, FC_CYAN, 26, "center");
 
-  // コースプレビュー
+  // プレビュー
   const course = COURSES[selectedCourse];
   const previewPts = getCoursePoints(course, 10);
 
-  // ミニマップ描画
   ctx.save();
-  ctx.translate(canvas.width / 2 - 150, 80);
-  ctx.scale(0.5, 0.5);
+  ctx.translate(W / 2 - 200, 90);
+  ctx.scale(0.45, 0.45);
   ctx.fillStyle = course.bgColor;
-  ctx.fillRect(0, 0, 600, 450);
-  const surfColors = { road: course.roadColor, offroad: "#a08050", ice: "#c8e0f0" };
+  ctx.fillRect(0, 0, W, H);
+  const surfColors = { road: course.roadColor, offroad: "#9a7d50", ice: "#c0dae8" };
   for (let i = 0; i < previewPts.length; i++) {
     const p1 = previewPts[i];
     const p2 = previewPts[(i + 1) % previewPts.length];
-    ctx.strokeStyle = surfColors[p1.surface] || course.roadColor;
-    ctx.lineWidth = course.roadWidth * 0.8;
+    ctx.strokeStyle = course.wallColor;
+    ctx.lineWidth = course.roadWidth + 6;
     ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(p1.x, p1.y);
-    ctx.lineTo(p2.x, p2.y);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    ctx.strokeStyle = surfColors[p1.surface] || course.roadColor;
+    ctx.lineWidth = course.roadWidth;
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
   }
   ctx.restore();
 
-  // コース名と説明
-  ctx.fillStyle = "#ff0";
-  ctx.font = "bold 20px monospace";
-  ctx.fillText(course.name, canvas.width / 2, 340);
-  ctx.fillStyle = "#aaa";
-  ctx.font = "14px monospace";
-  ctx.fillText(course.description, canvas.width / 2, 365);
-  ctx.fillText(`${TOTAL_LAPS}周`, canvas.width / 2, 390);
+  // コース情報
+  fcWindow(200, 510, W - 400, 100, FC_YELLOW);
+  fcTextWithShadow(course.name, W / 2, 545, FC_YELLOW, 28, "center");
+  fcText(course.description, W / 2, 575, FC_WHITE, 15, "center");
+  fcText(`${TOTAL_LAPS} しゅう`, W / 2, 595, FC_CYAN, 14, "center");
 
-  // コース一覧
-  ctx.fillStyle = "#666";
-  ctx.font = "14px monospace";
+  // コース一覧（下部）
   COURSES.forEach((c, i) => {
-    const x = 80 + i * 110;
-    const y = 450;
+    const x = 110 + i * 165;
+    const y = 660;
     if (i === selectedCourse) {
-      ctx.fillStyle = "#ff0";
-      ctx.strokeStyle = "#ff0";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x - 5, y - 15, 100, 30);
+      ctx.fillStyle = FC_YELLOW;
+      ctx.fillRect(x - 4, y - 14, 150, 24);
+      ctx.fillStyle = FC_BLACK;
     } else {
-      ctx.fillStyle = "#666";
+      ctx.fillStyle = "#505050";
     }
-    ctx.fillText(`${i + 1}. ${c.name.slice(0, 6)}`, x, y);
+    ctx.font = "bold 13px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(`${i + 1}. ${c.name}`, x, y);
   });
 
-  ctx.fillStyle = "#888";
-  ctx.font = "13px monospace";
-  ctx.fillText("←→: 選択  Enter: 決定  ESC: 戻る", canvas.width / 2, 540);
+  fcText("←→:えらぶ  Enter:スタート  ESC:もどる", W / 2, H - 40, FC_DKGRAY, 13, "center");
   ctx.textAlign = "start";
 }
 
 // ========================================
-// 描画: カウントダウン
+// カウントダウン
 // ========================================
 function drawCountdown() {
-  const course = COURSES[selectedCourse];
-  drawCourse(course);
+  drawCourse(COURSES[selectedCourse]);
   cars.forEach(c => drawCar(c));
 
   const sec = Math.ceil(countdownTimer / 60);
   ctx.textAlign = "center";
-  ctx.fillStyle = sec > 0 ? "#fff" : "#ff0";
-  ctx.font = "bold 72px monospace";
-  ctx.fillText(sec > 0 ? sec : "GO!", canvas.width / 2, canvas.height / 2 + 20);
+  if (sec > 0) {
+    fcTextWithShadow(String(sec), W / 2, H / 2 + 20, FC_WHITE, 80, "center");
+  } else {
+    fcTextWithShadow("GO!!", W / 2, H / 2 + 20, FC_YELLOW, 80, "center");
+  }
   ctx.textAlign = "start";
 }
 
 // ========================================
-// 描画: レース中UI
+// レースUI
 // ========================================
 function drawRaceUI() {
-  const course = COURSES[selectedCourse];
-  drawCourse(course);
+  drawCourse(COURSES[selectedCourse]);
 
-  // 車を順位順に（下位から描画して上位が上に）
   const rankings = getRankings();
-  for (let i = rankings.length - 1; i >= 0; i--) {
-    drawCar(rankings[i]);
-  }
+  for (let i = rankings.length - 1; i >= 0; i--) drawCar(rankings[i]);
 
-  // HUD
+  // 1P HUD
   const p1 = cars[0];
   const rank = rankings.indexOf(p1) + 1;
+  fcWindow(5, 5, 200, 85, FC_RED);
+  fcText("1P", 15, 25, FC_RED, 14);
+  fcText(`LAP ${Math.min(p1.lap + 1, TOTAL_LAPS)}/${TOTAL_LAPS}`, 55, 25, FC_WHITE, 14);
+  fcText(`${rank}/${cars.length}`, 160, 25, FC_YELLOW, 16);
 
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  ctx.fillRect(5, 5, 180, 90);
+  fcText("HP", 15, 48, FC_WHITE, 12);
+  fcParamBar(40, 38, 120, p1.hp, MAX_HP, p1.hp > 50 ? FC_GREEN : p1.hp > 25 ? FC_YELLOW : FC_RED);
 
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 14px monospace";
-  ctx.fillText(`LAP: ${Math.min(p1.lap + 1, TOTAL_LAPS)}/${TOTAL_LAPS}`, 15, 22);
-  ctx.fillText(`順位: ${rank}/${cars.length}`, 15, 40);
-  ctx.fillStyle = p1.hp > MAX_HP * 0.5 ? "#0f0" : p1.hp > MAX_HP * 0.25 ? "#ff0" : "#f00";
-  ctx.fillText(`HP: ${Math.ceil(p1.hp)}`, 15, 58);
-
-  // スペシャルゲージ
-  ctx.fillStyle = "#333";
-  ctx.fillRect(15, 68, 100, 10);
+  fcText("SP", 15, 70, FC_WHITE, 12);
   const spReady = p1.specialTimer <= 0;
-  const spRatio = spReady ? 1 : 1 - p1.specialTimer / SPECIAL_COOLDOWN;
-  ctx.fillStyle = spReady ? "#0ff" : "#066";
-  ctx.fillRect(15, 68, 100 * spRatio, 10);
-  ctx.fillStyle = "#fff";
-  ctx.font = "10px monospace";
-  ctx.fillText(spReady ? "SP: READY! [Z]" : "SP: charging...", 15, 88);
+  fcParamBar(40, 60, 120, spReady ? SPECIAL_COOLDOWN : SPECIAL_COOLDOWN - p1.specialTimer, SPECIAL_COOLDOWN, spReady ? FC_CYAN : FC_BLUE);
+  if (spReady) fcText("[Z]", 168, 70, FC_CYAN, 11);
+
+  fcText(`TIME: ${(raceTimer / 60).toFixed(1)}`, 15, 83, FC_WHITE, 11);
 
   // 2P HUD
   if (gameMode === "multi" && cars.length > 1 && cars[1].isPlayer) {
     const p2 = cars[1];
     const rank2 = rankings.indexOf(p2) + 1;
-    const hx = canvas.width - 185;
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(hx, 5, 180, 90);
-    ctx.fillStyle = "#0af";
-    ctx.font = "bold 14px monospace";
-    ctx.fillText("2P", hx + 10, 22);
-    ctx.fillStyle = "#fff";
-    ctx.fillText(`LAP: ${Math.min(p2.lap + 1, TOTAL_LAPS)}/${TOTAL_LAPS}`, hx + 35, 22);
-    ctx.fillText(`順位: ${rank2}/${cars.length}`, hx + 10, 40);
-    ctx.fillStyle = p2.hp > MAX_HP * 0.5 ? "#0f0" : p2.hp > MAX_HP * 0.25 ? "#ff0" : "#f00";
-    ctx.fillText(`HP: ${Math.ceil(p2.hp)}`, hx + 10, 58);
+    const hx = W - 205;
+    fcWindow(hx, 5, 200, 85, FC_BLUE);
+    fcText("2P", hx + 10, 25, FC_BLUE, 14);
+    fcText(`LAP ${Math.min(p2.lap + 1, TOTAL_LAPS)}/${TOTAL_LAPS}`, hx + 50, 25, FC_WHITE, 14);
+    fcText(`${rank2}/${cars.length}`, hx + 155, 25, FC_YELLOW, 16);
+    fcText("HP", hx + 10, 48, FC_WHITE, 12);
+    fcParamBar(hx + 35, 38, 120, p2.hp, MAX_HP, p2.hp > 50 ? FC_GREEN : p2.hp > 25 ? FC_YELLOW : FC_RED);
+    fcText("SP", hx + 10, 70, FC_WHITE, 12);
     const sp2Ready = p2.specialTimer <= 0;
-    const sp2Ratio = sp2Ready ? 1 : 1 - p2.specialTimer / SPECIAL_COOLDOWN;
-    ctx.fillStyle = "#333";
-    ctx.fillRect(hx + 10, 68, 100, 10);
-    ctx.fillStyle = sp2Ready ? "#0ff" : "#066";
-    ctx.fillRect(hx + 10, 68, 100 * sp2Ratio, 10);
-    ctx.fillStyle = "#fff";
-    ctx.font = "10px monospace";
-    ctx.fillText(sp2Ready ? "SP: READY! [Q]" : "SP: charging...", hx + 10, 88);
+    fcParamBar(hx + 35, 60, 120, sp2Ready ? SPECIAL_COOLDOWN : SPECIAL_COOLDOWN - p2.specialTimer, SPECIAL_COOLDOWN, sp2Ready ? FC_CYAN : FC_BLUE);
+    if (sp2Ready) fcText("[Q]", hx + 163, 70, FC_CYAN, 11);
   }
 
   // ミニマップ
   drawMinimap();
+
+  // ラップ表示（ラップ変化時にフラッシュ）
+  if (p1.lap > 0 && raceTimer % 120 < 60 && p1.lap < TOTAL_LAPS) {
+    // nothing extra
+  }
 }
 
-// ========================================
-// ミニマップ
-// ========================================
 function drawMinimap() {
-  const mx = canvas.width - 130;
-  const my = canvas.height - 110;
-  const mw = 120;
-  const mh = 100;
+  const mx = W - 155, my = H - 130, mw = 145, mh = 120;
+  fcWindow(mx, my, mw, mh, FC_WHITE);
+  const scaleX = (mw - 10) / W, scaleY = (mh - 10) / H;
 
-  ctx.fillStyle = "rgba(0,0,0,0.5)";
-  ctx.fillRect(mx, my, mw, mh);
-
-  // コースライン
-  const scaleX = mw / canvas.width;
-  const scaleY = mh / canvas.height;
-  ctx.strokeStyle = "#555";
+  ctx.strokeStyle = "#404040";
   ctx.lineWidth = 2;
   ctx.beginPath();
   coursePoints.forEach((p, i) => {
-    const px = mx + p.x * scaleX;
-    const py = my + p.y * scaleY;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
+    const px = mx + 5 + p.x * scaleX, py = my + 5 + p.y * scaleY;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
   });
   ctx.closePath();
   ctx.stroke();
 
-  // 車の位置
   cars.forEach(c => {
-    ctx.fillStyle = c.isPlayer ? (c.playerId === 0 ? "#f00" : "#0af") : "#ff0";
-    ctx.fillRect(mx + c.x * scaleX - 2, my + c.y * scaleY - 2, 4, 4);
+    ctx.fillStyle = c.isPlayer ? (c.playerId === 0 ? FC_RED : FC_BLUE) : FC_YELLOW;
+    const px = mx + 5 + c.x * scaleX, py = my + 5 + c.y * scaleY;
+    ctx.fillRect(px - 2, py - 2, 4, 4);
   });
 }
 
 // ========================================
-// 描画: リザルト
+// リザルト
 // ========================================
 function drawResult() {
-  ctx.fillStyle = "rgba(0,0,0,0.85)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = FC_BLACK;
+  ctx.fillRect(0, 0, W, H);
 
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#ff0";
-  ctx.font = "bold 30px monospace";
-  ctx.fillText("RESULT", canvas.width / 2, 60);
+  fcWindow(100, 30, W - 200, 60, FC_YELLOW);
+  fcTextWithShadow("R E S U L T", W / 2, 70, FC_YELLOW, 36, "center");
 
   const rankings = getRankings();
+  fcWindow(100, 110, W - 200, rankings.length * 55 + 20, FC_WHITE);
+
   rankings.forEach((c, i) => {
-    const y = 110 + i * 45;
-    const img = carImages[c.dataIndex];
+    const y = 145 + i * 55;
 
     // 順位色
-    if (i === 0) ctx.fillStyle = "#ffd700";
-    else if (i === 1) ctx.fillStyle = "#c0c0c0";
-    else if (i === 2) ctx.fillStyle = "#cd7f32";
-    else ctx.fillStyle = "#888";
+    const col = i === 0 ? "#ffd700" : i === 1 ? "#c0c0c0" : i === 2 ? "#cd7f32" : "#606060";
 
-    ctx.font = "bold 18px monospace";
-    ctx.textAlign = "left";
-    ctx.fillText(`${i + 1}位`, 120, y);
+    // プレイヤーマーク
+    if (c.isPlayer) {
+      fcText(c.playerId === 0 ? "1P" : "2P", 130, y, c.playerId === 0 ? FC_RED : FC_BLUE, 16);
+    }
+
+    fcText(`${i + 1}`, 180, y, col, 22);
 
     // 車画像
-    if (img && img.complete && img.naturalWidth > 0) {
+    const img = getColoredCar(c.dataIndex, c.colorIndex);
+    if (img) {
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 180, y - 14, img.naturalWidth * 2, img.naturalHeight * 2);
+      ctx.drawImage(img, 210, y - 16, img.width * 2.5, img.height * 2.5);
       ctx.imageSmoothingEnabled = true;
     }
 
-    ctx.fillText(CAR_DATA[c.dataIndex].name, 220, y);
+    fcText(CAR_DATA[c.dataIndex].name, 270, y, col, 16);
 
     ctx.textAlign = "right";
     if (c.finished) {
-      const time = (c.finishTime / 60).toFixed(1);
-      ctx.fillText(`${time}s`, 650, y);
+      fcText(`${(c.finishTime / 60).toFixed(1)}s`, W - 150, y, col, 16, "right");
     } else if (c.hp <= 0) {
-      ctx.fillStyle = "#f00";
-      ctx.fillText("DESTROYED", 650, y);
+      fcText("DESTROYED", W - 150, y, FC_RED, 16, "right");
     } else {
-      ctx.fillText(`LAP ${c.lap}`, 650, y);
+      fcText(`LAP ${c.lap}`, W - 150, y, "#505050", 16, "right");
     }
-
-    if (c.isPlayer) {
-      ctx.fillStyle = c.playerId === 0 ? "#f44" : "#4af";
-      ctx.fillText(c.playerId === 0 ? "1P" : "2P", 100, y);
-    }
+    ctx.textAlign = "start";
   });
 
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#aaa";
-  ctx.font = "14px monospace";
-  ctx.fillText("Enter: 次へ  ESC: タイトルへ", canvas.width / 2, 560);
-  ctx.textAlign = "start";
+  const courseName = COURSES[selectedCourse].name;
+  fcText(courseName, W / 2, H - 90, FC_CYAN, 16, "center");
+  fcText("Enter:つぎへ  ESC:タイトルへ", W / 2, H - 50, FC_DKGRAY, 14, "center");
 }
 
 // ========================================
-// 描画: グランプリ総合結果
+// グランプリ総合結果
 // ========================================
 function drawGrandPrixResult() {
-  ctx.fillStyle = "rgba(0,0,10,0.95)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = FC_BLACK;
+  ctx.fillRect(0, 0, W, H);
 
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#ff0";
-  ctx.font = "bold 28px monospace";
-  ctx.fillText("グランプリ総合結果", canvas.width / 2, 50);
+  fcWindow(150, 30, W - 300, 60, FC_YELLOW);
+  fcTextWithShadow("グランプリ そうごう けっか", W / 2, 70, FC_YELLOW, 28, "center");
 
-  // 各レースの順位からポイント計算
   const pointTable = [10, 7, 5, 4, 3, 2, 1];
   const totals = {};
-
-  gpResults.forEach((raceRanking, raceIdx) => {
+  gpResults.forEach((raceRanking) => {
     raceRanking.forEach((c, rank) => {
       const key = c.dataIndex;
-      if (!totals[key]) totals[key] = { dataIndex: c.dataIndex, points: 0, isPlayer: c.isPlayer, playerId: c.playerId };
+      if (!totals[key]) totals[key] = { dataIndex: c.dataIndex, points: 0, isPlayer: c.isPlayer, playerId: c.playerId, colorIndex: c.colorIndex };
       totals[key].points += pointTable[rank] || 1;
     });
   });
-
   const sorted = Object.values(totals).sort((a, b) => b.points - a.points);
 
-  ctx.textAlign = "left";
+  fcWindow(150, 110, W - 300, Math.min(sorted.length, 8) * 55 + 20, FC_WHITE);
+
   sorted.slice(0, 8).forEach((entry, i) => {
-    const y = 100 + i * 42;
-    if (i === 0) ctx.fillStyle = "#ffd700";
-    else if (i === 1) ctx.fillStyle = "#c0c0c0";
-    else if (i === 2) ctx.fillStyle = "#cd7f32";
-    else ctx.fillStyle = "#888";
+    const y = 148 + i * 55;
+    const col = i === 0 ? "#ffd700" : i === 1 ? "#c0c0c0" : i === 2 ? "#cd7f32" : "#606060";
 
-    ctx.font = "bold 18px monospace";
-    ctx.fillText(`${i + 1}位`, 120, y);
+    if (entry.isPlayer) {
+      fcText("1P", 180, y, FC_RED, 16);
+    }
 
-    const img = carImages[entry.dataIndex];
-    if (img && img.complete && img.naturalWidth > 0) {
+    fcText(`${i + 1}`, 220, y, col, 22);
+
+    const img = getColoredCar(entry.dataIndex, entry.colorIndex || 0);
+    if (img) {
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 180, y - 14, img.naturalWidth * 2, img.naturalHeight * 2);
+      ctx.drawImage(img, 260, y - 16, img.width * 2.5, img.height * 2.5);
       ctx.imageSmoothingEnabled = true;
     }
 
-    ctx.fillText(CAR_DATA[entry.dataIndex].name, 220, y);
-    ctx.textAlign = "right";
-    ctx.fillText(`${entry.points}pts`, 650, y);
-    if (entry.isPlayer) {
-      ctx.fillStyle = "#f44";
-      ctx.fillText("1P", 100, y);
-    }
-    ctx.textAlign = "left";
+    fcText(CAR_DATA[entry.dataIndex].name, 320, y, col, 16);
+    fcText(`${entry.points}pts`, W - 200, y, col, 18, "right");
+    ctx.textAlign = "start";
   });
 
-  ctx.textAlign = "center";
-  ctx.fillStyle = "#aaa";
-  ctx.font = "14px monospace";
-  ctx.fillText("Enter: タイトルへ", canvas.width / 2, 560);
-  ctx.textAlign = "start";
+  // チャンピオン演出
+  if (sorted.length > 0 && sorted[0].isPlayer) {
+    if (Math.floor(raceTimer / 15) % 2 === 0) {
+      fcTextWithShadow("★ CHAMPION! ★", W / 2, H - 100, FC_YELLOW, 32, "center");
+    }
+  }
+
+  fcText("Enter:タイトルへ", W / 2, H - 40, FC_DKGRAY, 14, "center");
+  raceTimer++;
 }
 
 // ========================================
 // 入力処理
 // ========================================
-let keyLock = {};
-function onKeyOnce(key) {
-  if (keys[key] && !keyLock[key]) {
-    keyLock[key] = true;
-    return true;
-  }
-  if (!keys[key]) keyLock[key] = false;
-  return false;
-}
-
 function handleInput() {
   switch (gameState) {
     case "title":
-      if (onKeyOnce("Enter")) {
-        gameState = "modeSelect";
-        modeSelectIdx = 0;
-        raceTimer = 0;
-      }
+      if (onKeyOnce("Enter")) { gameState = "modeSelect"; modeSelectIdx = 0; raceTimer = 0; }
       break;
 
     case "modeSelect":
@@ -1039,6 +1028,7 @@ function handleInput() {
         else if (modeSelectIdx === 1) { gameMode = "single"; }
         else { gameMode = "multi"; }
         selectingPlayer = 0;
+        colorSelectMode = false;
         gameState = "carSelect";
       }
       if (onKeyOnce("Escape")) gameState = "title";
@@ -1046,6 +1036,28 @@ function handleInput() {
 
     case "carSelect": {
       const isSel2P = selectingPlayer === 1;
+
+      // カラー選択モード
+      if (colorSelectMode) {
+        if (onKeyOnce("ArrowRight")) {
+          if (isSel2P) playerColor2 = (playerColor2 + 1) % BODY_COLORS.length;
+          else playerColor1 = (playerColor1 + 1) % BODY_COLORS.length;
+        }
+        if (onKeyOnce("ArrowLeft")) {
+          if (isSel2P) playerColor2 = (playerColor2 - 1 + BODY_COLORS.length) % BODY_COLORS.length;
+          else playerColor1 = (playerColor1 - 1 + BODY_COLORS.length) % BODY_COLORS.length;
+        }
+        if (onKeyOnce("Enter") || onKeyOnce("c") || onKeyOnce("C")) {
+          colorSelectMode = false;
+        }
+        break;
+      }
+
+      if (onKeyOnce("c") || onKeyOnce("C")) {
+        colorSelectMode = true;
+        break;
+      }
+
       if (onKeyOnce("ArrowRight")) {
         if (isSel2P) selectedCar2 = (selectedCar2 + 1) % CAR_DATA.length;
         else selectedCar = (selectedCar + 1) % CAR_DATA.length;
@@ -1059,7 +1071,6 @@ function handleInput() {
           selectingPlayer = 1;
         } else {
           if (modeSelectIdx === 0) {
-            // グランプリ: コース選択なし、自動で進む
             selectedCourse = currentGPCourse;
             initRace();
           } else {
@@ -1093,10 +1104,10 @@ function handleInput() {
     case "result":
       if (onKeyOnce("Enter")) {
         if (modeSelectIdx === 0) {
-          // グランプリモード
           gpResults.push(getRankings());
           currentGPCourse++;
           if (currentGPCourse >= COURSES.length) {
+            raceTimer = 0;
             gameState = "grandprixResult";
           } else {
             selectedCourse = currentGPCourse;
@@ -1120,18 +1131,16 @@ function handleInput() {
 // ========================================
 function gameLoop() {
   handleInput();
-
   switch (gameState) {
-    case "title":       drawTitle(); break;
-    case "modeSelect":  drawModeSelect(); break;
-    case "carSelect":   drawCarSelect(); break;
-    case "courseSelect": drawCourseSelect(); break;
-    case "countdown":   drawCountdown(); break;
-    case "race":        updateRace(); drawRaceUI(); break;
-    case "result":      drawResult(); break;
+    case "title":           drawTitle(); break;
+    case "modeSelect":      drawModeSelect(); break;
+    case "carSelect":       drawCarSelect(); break;
+    case "courseSelect":    drawCourseSelect(); break;
+    case "countdown":       drawCountdown(); break;
+    case "race":            updateRace(); drawRaceUI(); break;
+    case "result":          drawResult(); break;
     case "grandprixResult": drawGrandPrixResult(); break;
   }
-
   requestAnimationFrame(gameLoop);
 }
 

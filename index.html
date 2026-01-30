@@ -6,12 +6,22 @@
   <title>激突四駆RE</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
-    canvas { image-rendering: pixelated; }
+    body {
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
   </style>
 </head>
 <body>
-  <canvas id="game" width="800" height="600"></canvas>
+  <canvas id="game" width="1200" height="900"></canvas>
   <script src="data.js"></script>
   <script src="courses.js"></script>
   <script src="game.js"></script>
