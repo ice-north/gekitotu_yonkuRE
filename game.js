@@ -166,7 +166,13 @@ let countdownTimer = 0;
 // キー入力
 // ========================================
 const keys = {};
-window.addEventListener("keydown", (e) => { keys[e.key] = true; e.preventDefault(); });
+window.addEventListener("keydown", (e) => {
+  keys[e.key] = true;
+  // ゲーム操作キーのみpreventDefault（F12等のブラウザキーは許可）
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," ","z","q","w","a","s","d","c"].includes(e.key)) {
+    e.preventDefault();
+  }
+});
 window.addEventListener("keyup", (e) => { keys[e.key] = false; });
 
 let keyLock = {};
@@ -618,17 +624,19 @@ function drawTitle() {
     fcText("- PRESS ENTER -", W / 2, 520, FC_WHITE, 22, "center");
   }
 
-  // 下部にマシンスクロール
-  const t = raceTimer * 0.5;
-  for (let i = 0; i < 10; i++) {
-    const idx = Math.floor((t / 60 + i) % CAR_DATA.length);
-    const img = getColoredCar(idx, i % BODY_COLORS.length);
-    if (img) {
-      ctx.imageSmoothingEnabled = false;
-      const px = ((t + i * 120) % (W + 100)) - 50;
-      ctx.drawImage(img, px, 660, img.width * 2, img.height * 2);
-      ctx.imageSmoothingEnabled = true;
+  // 下部にマシンスクロール（オリジナル画像のみ使用して軽量化）
+  if (imagesLoaded > 0) {
+    const t = raceTimer * 0.5;
+    ctx.imageSmoothingEnabled = false;
+    for (let i = 0; i < 8; i++) {
+      const idx = Math.floor((t / 80 + i) % CAR_DATA.length);
+      const img = carImagesOriginal[idx];
+      if (img && img.complete && img.naturalWidth > 0) {
+        const px = ((t + i * 150) % (W + 100)) - 50;
+        ctx.drawImage(img, px, 660, img.naturalWidth * 2, img.naturalHeight * 2);
+      }
     }
+    ctx.imageSmoothingEnabled = true;
   }
 
   fcText("© GEKITOTSU YONKU RE", W / 2, H - 50, FC_DKGRAY, 12, "center");
