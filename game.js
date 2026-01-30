@@ -26,18 +26,19 @@ const FC_YELLOW  = "#f8d800";
 const FC_CYAN    = "#00e8d8";
 const FC_ORANGE  = "#f87818";
 
-// ボディカラー選択肢（オレンジ部分を差し替える）
+// ボディカラー選択肢（CSS filter hue-rotate方式でCORS回避）
+// オレンジは約30度。各色への回転角度を計算
 const BODY_COLORS = [
-  { name: "オレンジ",   hueShift: 0,   color: "#f87818" },
-  { name: "レッド",     hueShift: -15, color: "#e03020" },
-  { name: "ブルー",     hueShift: 200, color: "#2060e0" },
-  { name: "グリーン",   hueShift: 100, color: "#20b040" },
-  { name: "イエロー",   hueShift: 30,  color: "#e8c010" },
-  { name: "ホワイト",   hueShift: 0,   color: "#e0e0e0" },
-  { name: "パープル",   hueShift: 260, color: "#9030d0" },
-  { name: "ピンク",     hueShift: 320, color: "#e05090" },
-  { name: "シアン",     hueShift: 170, color: "#00c8c8" },
-  { name: "ブラック",   hueShift: 0,   color: "#383838" },
+  { name: "オレンジ",   filter: "",                                     color: "#f87818" },
+  { name: "レッド",     filter: "hue-rotate(-30deg) saturate(1.5)",     color: "#e03020" },
+  { name: "ブルー",     filter: "hue-rotate(190deg)",                   color: "#2060e0" },
+  { name: "グリーン",   filter: "hue-rotate(90deg)",                    color: "#20b040" },
+  { name: "イエロー",   filter: "hue-rotate(20deg) saturate(1.3)",      color: "#e8c010" },
+  { name: "ホワイト",   filter: "saturate(0) brightness(1.8)",          color: "#e0e0e0" },
+  { name: "パープル",   filter: "hue-rotate(250deg)",                   color: "#9030d0" },
+  { name: "ピンク",     filter: "hue-rotate(300deg) saturate(1.2)",     color: "#e05090" },
+  { name: "シアン",     filter: "hue-rotate(150deg)",                   color: "#00c8c8" },
+  { name: "ブラック",   filter: "saturate(0) brightness(0.3)",          color: "#383838" },
 ];
 
 let playerColor1 = 0;  // 1P カラー選択インデックス
@@ -59,7 +60,7 @@ CAR_DATA.forEach((data) => {
   carImagesOriginal.push(img);
 });
 
-// オレンジ系ピクセルを検出して別色に置換したcanvasを生成
+// CSS filter方式でカラー変更（getImageData不要 = CORS問題なし）
 function getColoredCar(carIndex, colorIndex) {
   const key = `${carIndex}_${colorIndex}`;
   if (coloredCarCache[key]) return coloredCarCache[key];
@@ -71,44 +72,16 @@ function getColoredCar(carIndex, colorIndex) {
   offCanvas.width = img.naturalWidth;
   offCanvas.height = img.naturalHeight;
   const offCtx = offCanvas.getContext("2d");
-  offCtx.drawImage(img, 0, 0);
 
-  if (colorIndex !== 0) { // 0=オレンジ（オリジナル）
-    const imageData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
-    const d = imageData.data;
-    const targetColor = hexToRgb(BODY_COLORS[colorIndex].color);
-
-    for (let i = 0; i < d.length; i += 4) {
-      const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
-      if (a === 0) continue;
-      // オレンジ系: R高め、G中程度、B低め
-      if (r > 150 && g > 60 && g < 180 && b < 80 && r > g) {
-        // 明度を保持しつつ色相を変更
-        const brightness = (r + g + b) / (248 + 120 + 24); // 元オレンジの平均で正規化
-        d[i]     = Math.min(255, Math.floor(targetColor.r * brightness));
-        d[i + 1] = Math.min(255, Math.floor(targetColor.g * brightness));
-        d[i + 2] = Math.min(255, Math.floor(targetColor.b * brightness));
-      }
-      // 暗いオレンジ（影の部分）
-      else if (r > 100 && r < 180 && g > 40 && g < 120 && b < 60 && r > g) {
-        const brightness = (r + g + b) / (140 + 80 + 20);
-        d[i]     = Math.min(255, Math.floor(targetColor.r * brightness * 0.6));
-        d[i + 1] = Math.min(255, Math.floor(targetColor.g * brightness * 0.6));
-        d[i + 2] = Math.min(255, Math.floor(targetColor.b * brightness * 0.6));
-      }
-    }
-    offCtx.putImageData(imageData, 0, 0);
+  const filterStr = BODY_COLORS[colorIndex].filter;
+  if (filterStr) {
+    offCtx.filter = filterStr;
   }
+  offCtx.drawImage(img, 0, 0);
+  offCtx.filter = "none";
 
   coloredCarCache[key] = offCanvas;
   return offCanvas;
-}
-
-function hexToRgb(hex) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return { r, g, b };
 }
 
 // ========================================
@@ -732,31 +705,32 @@ function drawCarSelect() {
     fcText(`${p.val}`, 590, y, FC_WHITE, 13);
   });
 
-  // サムネイル一覧
+  // サムネイル一覧（小さめ表示）
   const cols = 13;
-  const spacing = 34;
+  const spacing = 44;
+  const thumbScale = 1; // 等倍（ドット絵そのままのサイズ）
   const startX = W / 2 - (cols * spacing) / 2;
   for (let row = 0; row < 2; row++) {
     for (let col = 0; col < cols; col++) {
       const idx = row * cols + col;
       if (idx >= CAR_DATA.length) break;
-      const tx = startX + col * spacing + 4;
-      const ty = 540 + row * 44;
+      const tx = startX + col * spacing + 10;
+      const ty = 550 + row * 30;
       if (idx === sel) {
         ctx.strokeStyle = FC_YELLOW;
         ctx.lineWidth = 2;
-        ctx.strokeRect(tx - 3, ty - 3, 26, 32);
+        ctx.strokeRect(tx - 3, ty - 3, 18, 22);
       }
       const tImg = getColoredCar(idx, idx === sel ? colIdx : 0);
       if (tImg) {
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(tImg, tx, ty, tImg.width * 2, tImg.height * 2);
+        ctx.drawImage(tImg, tx, ty, tImg.width * thumbScale, tImg.height * thumbScale);
         ctx.imageSmoothingEnabled = true;
       }
     }
   }
 
-  fcText(`${sel + 1} / ${CAR_DATA.length}`, W / 2, 650, FC_DKGRAY, 14, "center");
+  fcText(`${sel + 1} / ${CAR_DATA.length}`, W / 2, 640, FC_DKGRAY, 14, "center");
   fcText("←→:えらぶ  C:カラー  Enter:けってい  ESC:もどる", W / 2, H - 40, FC_DKGRAY, 13, "center");
 }
 
