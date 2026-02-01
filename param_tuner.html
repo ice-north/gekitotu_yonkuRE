@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>激突四駆RE - パラメータ調整ツール</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #e0e0e0; font-family: 'Consolas', monospace; display: flex; height: 100vh; overflow: hidden; }
+
+#sidebar {
+  width: 340px; background: #16213e; padding: 10px; overflow-y: auto; border-right: 2px solid #0f3460;
+  display: flex; flex-direction: column; gap: 6px; font-size: 12px;
+}
+#sidebar h2 { color: #f8d800; font-size: 15px; text-align: center; border-bottom: 1px solid #0f3460; padding-bottom: 4px; }
+.section { background: #0f3460; padding: 8px; border-radius: 4px; }
+.section h3 { color: #00e8d8; font-size: 12px; margin-bottom: 4px; }
+.param-row { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; }
+.param-row label { width: 80px; text-align: right; flex-shrink: 0; font-size: 11px; }
+.param-row input[type="range"] { flex: 1; height: 16px; }
+.param-row .val { width: 28px; text-align: center; color: #f8d800; font-size: 12px; }
+.car-thumb { display: inline-block; cursor: pointer; padding: 2px; border: 2px solid transparent; vertical-align: top; }
+.car-thumb.selected { border-color: #f8d800; background: rgba(248,216,0,0.15); }
+.car-thumb img { display: block; image-rendering: pixelated; }
+button { background: #e94560; color: #fff; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-family: inherit; }
+button:hover { background: #c83050; }
+button.secondary { background: #0f3460; border: 1px solid #00e8d8; color: #00e8d8; }
+select { background: #1a1a2e; border: 1px solid #0f3460; color: #e0e0e0; padding: 3px; font-size: 11px; border-radius: 3px; }
+
+#canvas-area { flex: 1; display: flex; flex-direction: column; }
+#hud { background: #16213e; padding: 4px 10px; font-size: 11px; border-bottom: 1px solid #0f3460; display: flex; gap: 16px; align-items: center; }
+canvas { flex: 1; display: block; image-rendering: pixelated; }
+
+#output-area { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); background: #16213e; border: 2px solid #f8d800; padding: 20px; border-radius: 8px; z-index: 100; width: 750px; max-height: 80vh; }
+#output-area textarea { width: 100%; height: 450px; background: #0f0f0f; color: #00e8d8; font-family: monospace; font-size: 11px; border: 1px solid #0f3460; padding: 8px; }
+#overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 99; }
+
+.derived { color: #888; font-size: 10px; margin-left: 84px; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>🔧 パラメータ調整</h2>
+
+  <div class="section">
+    <h3>マシン選択</h3>
+    <div id="car-grid" style="max-height:130px; overflow-y:auto;"></div>
+    <div style="margin-top:4px; color:#f8d800;" id="carNameLabel">-</div>
+  </div>
+
+  <div class="section">
+    <h3>パラメータ (1-10)</h3>
+    <div class="param-row"><label>スピード:</label><input type="range" id="p_speed" min="1" max="10" value="6"><span class="val" id="v_speed">6</span></div>
+    <div class="derived" id="d_speed">maxSpeed: 4.20</div>
+    <div class="param-row"><label>かそく:</label><input type="range" id="p_accel" min="1" max="10" value="6"><span class="val" id="v_accel">6</span></div>
+    <div class="derived" id="d_accel">accelRate: 0.138</div>
+    <div class="param-row"><label>ブレーキ:</label><input type="range" id="p_brake" min="1" max="10" value="5"><span class="val" id="v_brake">5</span></div>
+    <div class="derived" id="d_brake">brakeRate: 0.115</div>
+    <div class="param-row"><label>オフロード:</label><input type="range" id="p_offroad" min="1" max="10" value="5"><span class="val" id="v_offroad">5</span></div>
+    <div class="derived" id="d_offroad">offroadRate: 0.65</div>
+    <div class="param-row"><label>こうげき:</label><input type="range" id="p_attack" min="1" max="10" value="5"><span class="val" id="v_attack">5</span></div>
+    <div class="param-row"><label>たいきゅう:</label><input type="range" id="p_durability" min="1" max="10" value="5"><span class="val" id="v_durability">5</span></div>
+    <div class="param-row"><label>ハンドル:</label><input type="range" id="p_handling" min="1" max="10" value="7"><span class="val" id="v_handling">7</span></div>
+    <div class="derived" id="d_handling">handleRate: 0.050</div>
+  </div>
+
+  <div class="section">
+    <h3>テストコース</h3>
+    <select id="courseSelect" style="width:100%;"></select>
+  </div>
+
+  <div class="section">
+    <h3>AI対戦車 (0-5)</h3>
+    <div class="param-row"><label>AI台数:</label><input type="range" id="aiCount" min="0" max="5" value="2"><span class="val" id="v_aiCount">2</span></div>
+  </div>
+
+  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+    <button onclick="resetRace()">🔄 リスタート</button>
+    <button onclick="exportSingleCar()">📋 この車を出力</button>
+    <button onclick="exportAllCars()">📋 全車データ出力</button>
+  </div>
+
+  <div class="section" style="font-size:10px; color:#888;">
+    操作: ↑アクセル ↓ブレーキ ←→ハンドル Z:スペシャル<br>
+    R:リスタート / スライダー変更は即反映
+  </div>
+</div>
+
+<div id="canvas-area">
+  <div id="hud">
+    <span>速度: <span id="hud_speed" style="color:#f8d800;">0.0</span></span>
+    <span>HP: <span id="hud_hp" style="color:#00ff00;">100</span></span>
+    <span>LAP: <span id="hud_lap" style="color:#00e8d8;">0/5</span></span>
+    <span>順位: <span id="hud_rank" style="color:#f8d800;">-</span></span>
+    <span>路面: <span id="hud_surface" style="color:#aaa;">-</span></span>
+    <span>TIME: <span id="hud_time">0.0</span>s</span>
+  </div>
+  <canvas id="gameCanvas" width="1200" height="900"></canvas>
+</div>
+
+<div id="overlay" onclick="closeOutput()"></div>
+<div id="output-area">
+  <h3 style="color:#f8d800; margin-bottom:10px;">マシンデータ出力</h3>
+  <textarea id="outputText" readonly></textarea>
+  <div style="margin-top:10px; display:flex; gap:8px;">
+    <button onclick="copyOutput()">📋 コピー</button>
+    <button class="secondary" onclick="closeOutput()">閉じる</button>
+  </div>
+</div>
+
+<script>
+// ========================================
+// Car & Course data (embedded from data.js / courses.js)
+// ========================================
+const CAR_DATA = [
+  { id:0,  name:"BATLE BOOMERANG",       img:"cars/01_BATLE BOOMERANG.png",        speed:6, accel:7, brake:5, offroad:4, attack:5, durability:5, handling:7 },
+  { id:1,  name:"BATTLE FOX",            img:"cars/02_BATTLE FOX.png",             speed:7, accel:6, brake:5, offroad:5, attack:4, durability:5, handling:8 },
+  { id:2,  name:"BATTLE FALCON",         img:"cars/03_BATTLE FALCON.png",          speed:8, accel:5, brake:5, offroad:3, attack:4, durability:4, handling:6 },
+  { id:3,  name:"BATTLE SUPER SABRE",    img:"cars/04_BATTLE SUPER SABRE.png",     speed:9, accel:4, brake:4, offroad:3, attack:3, durability:4, handling:5 },
+  { id:4,  name:"BATTLE THUNDER SHOT",   img:"cars/05_BATTLE THUNDER SHOT.png",    speed:7, accel:7, brake:6, offroad:5, attack:6, durability:5, handling:6 },
+  { id:5,  name:"BATTLE SUPER DRAGON",   img:"cars/06_BATTLE SUPER DRAGON.png",    speed:6, accel:6, brake:5, offroad:7, attack:7, durability:7, handling:5 },
+  { id:6,  name:"BATTLE FIRE DRAGON",    img:"cars/07_BATTLE FIRE DRAGON.png",     speed:7, accel:5, brake:5, offroad:6, attack:8, durability:6, handling:5 },
+  { id:7,  name:"BATTLE THUNDER DRAGON", img:"cars/08_BATTLE THUNDER DRAGON.png",  speed:7, accel:6, brake:5, offroad:6, attack:7, durability:7, handling:5 },
+  { id:8,  name:"BATTLE EMPEROR",        img:"cars/09_BATTLE EMPEROR.png",         speed:8, accel:5, brake:6, offroad:5, attack:6, durability:8, handling:6 },
+  { id:9,  name:"BATTLE BURNING SUN",    img:"cars/10_BATTLE BURNING SUN.png",     speed:8, accel:6, brake:5, offroad:4, attack:7, durability:5, handling:5 },
+  { id:10, name:"BATTLE SHOOTING STAR",  img:"cars/11_BATTLE SHOOTING STAR.png",   speed:9, accel:7, brake:4, offroad:3, attack:4, durability:3, handling:6 },
+  { id:11, name:"BATTLE CANNON BALL",    img:"cars/12_BATTLE CANNON BALL.png",     speed:5, accel:5, brake:7, offroad:8, attack:9, durability:9, handling:4 },
+  { id:12, name:"BATTLE DANCING DALL",   img:"cars/13_BATTLE DANCING DALL.png",    speed:6, accel:8, brake:6, offroad:5, attack:5, durability:5, handling:9 },
+  { id:13, name:"BATTLE DRAGON SP1",     img:"cars/14_BATTLE DRAGON SP1.png",      speed:7, accel:6, brake:6, offroad:6, attack:7, durability:6, handling:6 },
+  { id:14, name:"BATTLE DRAGON SP2",     img:"cars/15_BATTLE DRAGON SP2.png",      speed:8, accel:6, brake:5, offroad:6, attack:7, durability:6, handling:5 },
+  { id:15, name:"BATTLE DRAGON SP3",     img:"cars/16_BATTLE DRAGON SP3.png",      speed:8, accel:7, brake:5, offroad:5, attack:8, durability:5, handling:5 },
+  { id:16, name:"BATTLE THUNDER SP",     img:"cars/17_BATTLE THUNDER SP.png",      speed:8, accel:7, brake:6, offroad:5, attack:6, durability:6, handling:6 },
+  { id:17, name:"BATTLE AVANTE SP",      img:"cars/18_BATTLE AVANTE SP.png",       speed:9, accel:6, brake:5, offroad:4, attack:5, durability:5, handling:7 },
+  { id:18, name:"BATTLE HOT SHOT",       img:"cars/19_BATTLE HOT SHOT.png",        speed:7, accel:8, brake:6, offroad:5, attack:6, durability:5, handling:7 },
+  { id:19, name:"BATTLE HORNET",         img:"cars/20_BATTLE HORNET.png",          speed:6, accel:9, brake:6, offroad:5, attack:5, durability:5, handling:8 },
+  { id:20, name:"BATTLE BIG WIG",        img:"cars/21_BATTLE BIG WIG.png",         speed:5, accel:5, brake:6, offroad:7, attack:8, durability:9, handling:4 },
+  { id:21, name:"BATTLE GRASS HOPPER II",img:"cars/22_BATTLE GRASS HOPPER II.png", speed:6, accel:7, brake:5, offroad:9, attack:5, durability:6, handling:7 },
+  { id:22, name:"BATTLE RISING BIRD",    img:"cars/23_BATTLE RISING BIRD.png",     speed:8, accel:6, brake:5, offroad:4, attack:5, durability:5, handling:8 },
+  { id:23, name:"BATTLE VANQUISH",       img:"cars/24_BATTLE VANQUISH.png",        speed:9, accel:5, brake:5, offroad:3, attack:6, durability:6, handling:6 },
+  { id:24, name:"BATTLE SAINT DRAGON",   img:"cars/25_BATTLE SAINT DRAGON.png",    speed:7, accel:6, brake:6, offroad:6, attack:7, durability:8, handling:6 },
+  { id:25, name:"BATTLE SCORCHER",       img:"cars/26_BATTLE SCORCHER.png",        speed:8, accel:7, brake:5, offroad:5, attack:6, durability:5, handling:7 },
+];
+
+// Mutable copy for editing
+const carParams = CAR_DATA.map(d => ({ ...d }));
+
+const COURSES = [
+  { id:0, name:"OVAL CIRCUIT", bgColor:"#2d5a1e", roadColor:"#707070", wallColor:"#c03030", roadWidth:100, laps:5, waypoints:[{x:600,y:160,surface:"road"},{x:930,y:220,surface:"road"},{x:1060,y:450,surface:"road"},{x:930,y:680,surface:"road"},{x:600,y:740,surface:"road"},{x:270,y:680,surface:"road"},{x:120,y:450,surface:"road"},{x:270,y:220,surface:"road"}] },
+  { id:1, name:"TECHNICAL GP", bgColor:"#2d5a1e", roadColor:"#606060", wallColor:"#c03030", roadWidth:90, laps:5, waypoints:[{x:600,y:100,surface:"road"},{x:900,y:130,surface:"road"},{x:1080,y:280,surface:"road"},{x:970,y:460,surface:"road"},{x:750,y:400,surface:"road"},{x:520,y:500,surface:"road"},{x:300,y:660,surface:"road"},{x:150,y:560,surface:"road"},{x:180,y:320,surface:"road"},{x:380,y:180,surface:"road"}] },
+  { id:2, name:"DIRT CROSS", bgColor:"#6b5535", roadColor:"#9a7d50", wallColor:"#8b6030", roadWidth:110, laps:5, waypoints:[{x:600,y:130,surface:"offroad"},{x:970,y:200,surface:"offroad"},{x:1050,y:500,surface:"offroad"},{x:820,y:720,surface:"offroad"},{x:450,y:750,surface:"offroad"},{x:150,y:600,surface:"offroad"},{x:120,y:300,surface:"offroad"},{x:300,y:130,surface:"offroad"}] },
+  { id:3, name:"ICE LAKE", bgColor:"#90b8d0", roadColor:"#c0dae8", wallColor:"#4080b0", roadWidth:115, laps:5, waypoints:[{x:600,y:130,surface:"ice"},{x:970,y:250,surface:"ice"},{x:1020,y:580,surface:"ice"},{x:680,y:750,surface:"ice"},{x:300,y:710,surface:"ice"},{x:150,y:440,surface:"ice"},{x:230,y:190,surface:"ice"}] },
+  { id:4, name:"MIX RALLY", bgColor:"#3a5a2a", roadColor:"#686868", wallColor:"#c03030", roadWidth:95, laps:5, waypoints:[{x:600,y:100,surface:"road"},{x:970,y:160,surface:"road"},{x:1090,y:400,surface:"offroad"},{x:1020,y:660,surface:"offroad"},{x:750,y:780,surface:"ice"},{x:450,y:750,surface:"ice"},{x:180,y:600,surface:"offroad"},{x:120,y:340,surface:"road"},{x:300,y:150,surface:"road"}] },
+  { id:5, name:"FINAL GP", bgColor:"#1e3a1e", roadColor:"#585858", wallColor:"#d02020", roadWidth:85, laps:5, waypoints:[{x:600,y:90,surface:"road"},{x:900,y:100,surface:"road"},{x:1090,y:240,surface:"ice"},{x:1080,y:460,surface:"ice"},{x:930,y:620,surface:"offroad"},{x:720,y:510,surface:"road"},{x:570,y:660,surface:"offroad"},{x:330,y:780,surface:"offroad"},{x:150,y:640,surface:"ice"},{x:120,y:400,surface:"road"},{x:200,y:210,surface:"road"},{x:380,y:120,surface:"road"}] },
+];
+
+// ========================================
+// Catmull-Rom
+// ========================================
+function getCoursePoints(course, resolution) {
+  const wp = course.waypoints, points = [], n = wp.length;
+  if (n < 2) return points;
+  for (let i = 0; i < n; i++) {
+    const p0 = wp[(i-1+n)%n], p1 = wp[i], p2 = wp[(i+1)%n], p3 = wp[(i+2)%n];
+    for (let t = 0; t < resolution; t++) {
+      const f = t/resolution;
+      const x = 0.5*((2*p1.x)+(-p0.x+p2.x)*f+(2*p0.x-5*p1.x+4*p2.x-p3.x)*f*f+(-p0.x+3*p1.x-3*p2.x+p3.x)*f*f*f);
+      const y = 0.5*((2*p1.y)+(-p0.y+p2.y)*f+(2*p0.y-5*p1.y+4*p2.y-p3.y)*f*f+(-p0.y+3*p1.y-3*p2.y+p3.y)*f*f*f);
+      points.push({ x, y, surface: p1.surface });
+    }
+  }
+  return points;
+}
+
+// ========================================
+// Game constants (same as game.js)
+// ========================================
+const W = 1200, H = 900;
+const MAX_HP = 100, TOTAL_LAPS = 5, SPECIAL_COOLDOWN = 300;
+const INVINCIBLE_TIME = 120, COLLISION_COOLDOWN = 20;
+
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// ========================================
+// Images
+// ========================================
+const carImages = [];
+let imagesLoaded = 0;
+CAR_DATA.forEach(d => {
+  const img = new Image();
+  img.src = d.img;
+  img.onload = () => imagesLoaded++;
+  carImages.push(img);
+});
+
+// ========================================
+// State
+// ========================================
+let selectedCarIdx = 0;
+let selectedCourseIdx = 0;
+let coursePoints = [];
+let courseCache = null;
+let cars = [];
+let raceTimer = 0;
+let keys = {};
+
+window.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," ","z"].includes(e.key)) e.preventDefault();
+  if (e.key === "r" || e.key === "R") resetRace();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+
+// ========================================
+// Build car grid
+// ========================================
+function buildCarGrid() {
+  const grid = document.getElementById("car-grid");
+  grid.innerHTML = "";
+  CAR_DATA.forEach((d, i) => {
+    const div = document.createElement("div");
+    div.className = "car-thumb" + (i === selectedCarIdx ? " selected" : "");
+    const img = document.createElement("img");
+    img.src = d.img;
+    img.width = 24; img.height = 32;
+    img.title = d.name;
+    div.appendChild(img);
+    div.onclick = () => { selectedCarIdx = i; loadParamsToUI(i); buildCarGrid(); resetRace(); };
+    grid.appendChild(div);
+  });
+  document.getElementById("carNameLabel").textContent = CAR_DATA[selectedCarIdx].name;
+}
+
+// ========================================
+// Course dropdown
+// ========================================
+const courseSel = document.getElementById("courseSelect");
+COURSES.forEach((c, i) => {
+  const opt = document.createElement("option");
+  opt.value = i; opt.textContent = `${i+1}. ${c.name}`;
+  courseSel.appendChild(opt);
+});
+courseSel.onchange = () => { selectedCourseIdx = parseInt(courseSel.value); resetRace(); };
+
+// ========================================
+// Parameter sliders
+// ========================================
+const paramKeys = ["speed","accel","brake","offroad","attack","durability","handling"];
+
+function loadParamsToUI(idx) {
+  const d = carParams[idx];
+  paramKeys.forEach(k => {
+    document.getElementById("p_" + k).value = d[k];
+    document.getElementById("v_" + k).textContent = d[k];
+  });
+  updateDerivedDisplay();
+}
+
+function readParamsFromUI() {
+  const p = {};
+  paramKeys.forEach(k => { p[k] = parseInt(document.getElementById("p_" + k).value); });
+  return p;
+}
+
+function updateDerivedDisplay() {
+  const p = readParamsFromUI();
+  document.getElementById("d_speed").textContent = `maxSpeed: ${(1.5 + p.speed * 0.45).toFixed(2)}`;
+  document.getElementById("d_accel").textContent = `accelRate: ${(0.03 + p.accel * 0.018).toFixed(3)}`;
+  document.getElementById("d_brake").textContent = `brakeRate: ${(0.04 + p.brake * 0.015).toFixed(3)}`;
+  document.getElementById("d_offroad").textContent = `offroadRate: ${(0.3 + p.offroad * 0.07).toFixed(2)}`;
+  document.getElementById("d_handling").textContent = `handleRate: ${(0.015 + p.handling * 0.005).toFixed(3)}`;
+}
+
+// Live update sliders
+paramKeys.forEach(k => {
+  const slider = document.getElementById("p_" + k);
+  slider.addEventListener("input", () => {
+    const val = parseInt(slider.value);
+    document.getElementById("v_" + k).textContent = val;
+    carParams[selectedCarIdx][k] = val;
+    updateDerivedDisplay();
+    // Apply to live car
+    if (cars.length > 0 && cars[0].isPlayer) {
+      const c = cars[0];
+      const d = carParams[selectedCarIdx];
+      c.maxSpeed = 1.5 + d.speed * 0.45;
+      c.accelRate = 0.03 + d.accel * 0.018;
+      c.brakeRate = 0.04 + d.brake * 0.015;
+      c.offroadRate = 0.3 + d.offroad * 0.07;
+      c.attackPower = d.attack;
+      c.durability = d.durability;
+      c.handleRate = 0.015 + d.handling * 0.005;
+    }
+  });
+});
+
+document.getElementById("aiCount").addEventListener("input", function() {
+  document.getElementById("v_aiCount").textContent = this.value;
+});
+
+// ========================================
+// Create car (same formula as game.js)
+// ========================================
+function createCar(dataIndex, isPlayer) {
+  const d = carParams[dataIndex];
+  return {
+    dataIndex, isPlayer,
+    x: 0, y: 0, vx: 0, vy: 0, angle: 0, speed: 0,
+    hp: MAX_HP, lap: 0, checkpoint: 0, finished: false, finishTime: 0,
+    specialTimer: 0, specialActive: false, specialDuration: 0,
+    invincible: INVINCIBLE_TIME, damageCooldown: 0,
+    knockbackX: 0, knockbackY: 0,
+    maxSpeed: 1.5 + d.speed * 0.45,
+    accelRate: 0.03 + d.accel * 0.018,
+    brakeRate: 0.04 + d.brake * 0.015,
+    offroadRate: 0.3 + d.offroad * 0.07,
+    attackPower: d.attack,
+    durability: d.durability,
+    handleRate: 0.015 + d.handling * 0.005,
+    aiTargetWP: 0,
+    aiVariance: (Math.random() - 0.5) * 0.3,
+  };
+}
+
+// ========================================
+// Surface detection
+// ========================================
+function getSurfaceAt(x, y) {
+  let minDist = Infinity, surface = "road";
+  for (let i = 0; i < coursePoints.length; i += 2) {
+    const p = coursePoints[i];
+    const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+    if (d < minDist) { minDist = d; surface = p.surface; }
+  }
+  const course = COURSES[selectedCourseIdx];
+  return { surface: minDist < (course.roadWidth / 2 + 5) ** 2 ? surface : "grass", onRoad: minDist < (course.roadWidth / 2 + 5) ** 2 };
+}
+
+// ========================================
+// Physics (same as game.js)
+// ========================================
+function applyCarPhysics(c) {
+  const targetVx = Math.cos(c.angle) * c.speed;
+  const targetVy = Math.sin(c.angle) * c.speed;
+  const surf = getSurfaceAt(c.x, c.y);
+  let inertia = 0.15;
+  if (surf.surface === "ice") inertia = 0.05;
+  else if (surf.surface === "offroad") inertia = 0.10;
+  else if (surf.surface === "grass") inertia = 0.08;
+  c.vx += (targetVx - c.vx) * inertia;
+  c.vy += (targetVy - c.vy) * inertia;
+  c.vx += c.knockbackX; c.vy += c.knockbackY;
+  c.knockbackX *= 0.85; c.knockbackY *= 0.85;
+  if (Math.abs(c.knockbackX) < 0.01) c.knockbackX = 0;
+  if (Math.abs(c.knockbackY) < 0.01) c.knockbackY = 0;
+  c.x += c.vx; c.y += c.vy;
+  if (c.x < 10) { c.x = 10; c.vx = Math.abs(c.vx)*0.5; c.knockbackX = 1; }
+  if (c.x > W-10) { c.x = W-10; c.vx = -Math.abs(c.vx)*0.5; c.knockbackX = -1; }
+  if (c.y < 10) { c.y = 10; c.vy = Math.abs(c.vy)*0.5; c.knockbackY = 1; }
+  if (c.y > H-10) { c.y = H-10; c.vy = -Math.abs(c.vy)*0.5; c.knockbackY = -1; }
+  if (c.invincible > 0) c.invincible--;
+  if (c.damageCooldown > 0) c.damageCooldown--;
+}
+
+function updatePlayerCar(c) {
+  if (c.finished || c.hp <= 0) return;
+  const surf = getSurfaceAt(c.x, c.y);
+  let frictionMul = 1, turnMul = 1;
+  if (surf.surface === "grass") { frictionMul = 0.4; turnMul = 0.6; }
+  else if (surf.surface === "offroad") { frictionMul = 0.5 + c.offroadRate * 0.5; turnMul = 0.8; }
+  else if (surf.surface === "ice") { frictionMul = 1.05; turnMul = 0.4; }
+  if (keys["ArrowUp"]) c.speed = Math.min(c.speed + c.accelRate * frictionMul, c.maxSpeed * frictionMul);
+  else if (keys["ArrowDown"]) c.speed = Math.max(c.speed - c.brakeRate, -c.maxSpeed * 0.3);
+  else { if (c.speed > 0) c.speed = Math.max(c.speed - 0.02, 0); if (c.speed < 0) c.speed = Math.min(c.speed + 0.02, 0); }
+  if (Math.abs(c.speed) > 0.05) {
+    const dir = c.speed > 0 ? 1 : -1;
+    if (keys["ArrowLeft"]) c.angle -= c.handleRate * turnMul * dir;
+    if (keys["ArrowRight"]) c.angle += c.handleRate * turnMul * dir;
+  }
+  if (c.specialTimer > 0) c.specialTimer--;
+  if (keys["z"] && c.specialTimer <= 0 && !c.specialActive) {
+    c.specialActive = true; c.specialDuration = 90; c.specialTimer = SPECIAL_COOLDOWN;
+  }
+  if (c.specialActive) { c.specialDuration--; c.speed = Math.min(c.speed + 0.1, c.maxSpeed * 1.5); if (c.specialDuration <= 0) c.specialActive = false; }
+  applyCarPhysics(c);
+  updateCheckpoint(c);
+}
+
+function updateAICar(c) {
+  if (c.finished || c.hp <= 0) return;
+  const surf = getSurfaceAt(c.x, c.y);
+  let frictionMul = 1, turnMul = 1;
+  if (surf.surface === "grass") { frictionMul = 0.4; turnMul = 0.6; }
+  else if (surf.surface === "offroad") { frictionMul = 0.5 + c.offroadRate * 0.5; turnMul = 0.8; }
+  else if (surf.surface === "ice") { frictionMul = 1.05; turnMul = 0.4; }
+  const target = coursePoints[c.aiTargetWP];
+  const dx = target.x - c.x, dy = target.y - c.y;
+  if (Math.sqrt(dx*dx+dy*dy) < 40) c.aiTargetWP = (c.aiTargetWP + 1) % coursePoints.length;
+  let angleDiff = Math.atan2(dy, dx) - c.angle;
+  while (angleDiff > Math.PI) angleDiff -= Math.PI*2;
+  while (angleDiff < -Math.PI) angleDiff += Math.PI*2;
+  const turnRate = c.handleRate * turnMul * (0.8 + c.aiVariance);
+  if (angleDiff > 0.05) c.angle += Math.min(turnRate, angleDiff);
+  else if (angleDiff < -0.05) c.angle += Math.max(-turnRate, angleDiff);
+  const speedFactor = 1 - Math.min(Math.abs(angleDiff)*0.5, 0.5);
+  const targetSpeed = c.maxSpeed * frictionMul * speedFactor * (0.85 + c.aiVariance * 0.3);
+  if (c.speed < targetSpeed) c.speed = Math.min(c.speed + c.accelRate * frictionMul * 0.9, targetSpeed);
+  else c.speed = Math.max(c.speed - c.brakeRate * 0.5, targetSpeed * 0.7);
+  applyCarPhysics(c);
+  updateCheckpoint(c);
+}
+
+function updateCheckpoint(c) {
+  const totalCP = coursePoints.length;
+  const checkInterval = Math.floor(totalCP / 8);
+  const nextCP = (c.checkpoint + 1) % 8;
+  const nextCPIndex = nextCP * checkInterval;
+  if (nextCPIndex < totalCP) {
+    const cp = coursePoints[nextCPIndex];
+    if ((cp.x-c.x)**2 + (cp.y-c.y)**2 < 60*60) {
+      c.checkpoint = nextCP;
+      if (nextCP === 0) { c.lap++; if (c.lap >= TOTAL_LAPS) { c.finished = true; c.finishTime = raceTimer; } }
+    }
+  }
+}
+
+function checkCollisions() {
+  for (let i = 0; i < cars.length; i++) {
+    for (let j = i+1; j < cars.length; j++) {
+      const a = cars[i], b = cars[j];
+      if (a.hp <= 0 || b.hp <= 0) continue;
+      const dx = b.x-a.x, dy = b.y-a.y, dist = Math.sqrt(dx*dx+dy*dy);
+      if (dist < 14 && dist > 0) {
+        const nx = dx/dist, ny = dy/dist, overlap = 14-dist;
+        a.x -= nx*overlap*0.5; a.y -= ny*overlap*0.5;
+        b.x += nx*overlap*0.5; b.y += ny*overlap*0.5;
+        const knockForce = (Math.abs(a.speed)+Math.abs(b.speed)+1)*0.6;
+        a.knockbackX -= nx*knockForce; a.knockbackY -= ny*knockForce;
+        b.knockbackX += nx*knockForce; b.knockbackY += ny*knockForce;
+        a.speed *= 0.5; b.speed *= 0.5;
+        if (a.invincible <= 0 && a.damageCooldown <= 0) applyDamage(a, b, nx, ny);
+        if (b.invincible <= 0 && b.damageCooldown <= 0) applyDamage(b, a, -nx, -ny);
+      }
+    }
+  }
+}
+
+function applyDamage(victim, attacker, nx, ny) {
+  let relAngle = Math.atan2(ny, nx) - victim.angle;
+  while (relAngle > Math.PI) relAngle -= Math.PI*2;
+  while (relAngle < -Math.PI) relAngle += Math.PI*2;
+  if (Math.abs(relAngle) < Math.PI/4) return;
+  const dmg = Math.max(0.5, attacker.attackPower * 0.5 - victim.durability * 0.2);
+  victim.hp = Math.max(0, victim.hp - dmg * (attacker.specialActive ? 2.5 : 1));
+  victim.damageCooldown = COLLISION_COOLDOWN;
+}
+
+// ========================================
+// Course cache (same as game.js)
+// ========================================
+function buildCourseCache(course) {
+  const off = document.createElement("canvas");
+  off.width = W; off.height = H;
+  const oc = off.getContext("2d");
+  const bgBase = course.bgColor;
+  oc.fillStyle = bgBase;
+  oc.fillRect(0, 0, W, H);
+  const bgR = parseInt(bgBase.slice(1,3),16), bgG = parseInt(bgBase.slice(3,5),16), bgB = parseInt(bgBase.slice(5,7),16);
+  for (let ty = 0; ty < H; ty += 8) {
+    for (let tx = 0; tx < W; tx += 8) {
+      const hash = ((tx*73+ty*137)>>>0) % 16;
+      if (hash < 3) {
+        const dr = hash===0?12:-8;
+        oc.fillStyle = `rgb(${Math.max(0,Math.min(255,bgR+dr))},${Math.max(0,Math.min(255,bgG+dr))},${Math.max(0,Math.min(255,bgB+dr))})`;
+        oc.fillRect(tx, ty, 4, 4);
+      }
+    }
+  }
+  const pts = coursePoints, rw = course.roadWidth;
+  const surfColors = { road: course.roadColor, offroad: "#9a7d50", ice: "#c0dae8" };
+  for (let i = 0; i < pts.length; i++) { const p1=pts[i],p2=pts[(i+1)%pts.length]; oc.strokeStyle=course.wallColor; oc.lineWidth=rw+12; oc.lineCap="round"; oc.beginPath(); oc.moveTo(p1.x,p1.y); oc.lineTo(p2.x,p2.y); oc.stroke(); }
+  for (let i = 0; i < pts.length; i++) { const p1=pts[i],p2=pts[(i+1)%pts.length]; oc.strokeStyle="#181818"; oc.lineWidth=rw+4; oc.lineCap="round"; oc.beginPath(); oc.moveTo(p1.x,p1.y); oc.lineTo(p2.x,p2.y); oc.stroke(); }
+  for (let i = 0; i < pts.length; i++) { const p1=pts[i],p2=pts[(i+1)%pts.length]; oc.strokeStyle=surfColors[p1.surface]||course.roadColor; oc.lineWidth=rw; oc.lineCap="round"; oc.beginPath(); oc.moveTo(p1.x,p1.y); oc.lineTo(p2.x,p2.y); oc.stroke(); }
+  oc.fillStyle="rgba(255,255,255,0.25)";
+  for (let i=0;i<pts.length;i+=3) { if(Math.floor(i/3)%2===0) { oc.fillRect(Math.floor(pts[i].x/4)*4-2,Math.floor(pts[i].y/4)*4-2,4,4); }}
+  if (pts.length >= 2) {
+    const sp=pts[0],sp2=pts[1],la=Math.atan2(sp2.y-sp.y,sp2.x-sp.x)+Math.PI/2,half=rw/2;
+    for (let s=-half;s<half;s+=8) { const row=Math.floor((s+half)/8); for(let t=-6;t<6;t+=8){ const col=Math.floor((t+6)/8); oc.fillStyle=(row+col)%2===0?"#fcfcfc":"#0f0f0f"; oc.save(); oc.translate(sp.x,sp.y); oc.rotate(la); oc.fillRect(t,s,8,8); oc.restore(); }}
+  }
+  courseCache = off;
+}
+
+// ========================================
+// Draw car
+// ========================================
+function drawCar(c) {
+  if (c.hp <= 0 && c.invincible <= -60) return;
+  const img = carImages[c.dataIndex];
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  ctx.rotate(c.angle + Math.PI/2);
+  ctx.imageSmoothingEnabled = false;
+  if (img && img.complete && img.naturalWidth > 0) {
+    if (c.specialActive) { ctx.shadowColor = "#f8d800"; ctx.shadowBlur = 10; }
+    if (c.invincible > 0) ctx.globalAlpha = Math.floor(c.invincible/4)%2===0?1:0.3;
+    else if (c.hp <= 0) ctx.globalAlpha = 0.25;
+    else if (c.hp < MAX_HP*0.3) ctx.globalAlpha = 0.5+Math.sin(raceTimer*0.4)*0.5;
+    ctx.drawImage(img, -img.naturalWidth/2, -img.naturalHeight/2);
+  } else {
+    ctx.fillStyle = c.isPlayer ? "#c83028" : "#0058a8";
+    ctx.fillRect(-5, -7, 10, 14);
+  }
+  ctx.restore();
+  // HP bar
+  if (c.hp > 0) {
+    const hpR = c.hp / MAX_HP;
+    ctx.fillStyle = "#303030";
+    ctx.fillRect(c.x-9, c.y-12, 18, 2);
+    ctx.fillStyle = hpR>0.5?"#00a800":hpR>0.25?"#f8d800":"#c83028";
+    ctx.fillRect(c.x-9, c.y-12, 18*hpR, 2);
+  }
+}
+
+// ========================================
+// Race init / reset
+// ========================================
+function resetRace() {
+  const course = COURSES[selectedCourseIdx];
+  coursePoints = getCoursePoints(course, 20);
+  buildCourseCache(course);
+  cars = [];
+
+  const startPt = coursePoints[0], nextPt = coursePoints[1];
+  const startAngle = Math.atan2(nextPt.y-startPt.y, nextPt.x-startPt.x);
+  const perpAngle = startAngle + Math.PI/2;
+
+  const p1 = createCar(selectedCarIdx, true);
+  p1.x = startPt.x - Math.cos(startAngle)*30;
+  p1.y = startPt.y - Math.sin(startAngle)*30;
+  p1.angle = startAngle;
+  cars.push(p1);
+
+  const aiCount = parseInt(document.getElementById("aiCount").value);
+  const usedIdx = [selectedCarIdx];
+  for (let i = 0; i < aiCount; i++) {
+    let aiIdx; do { aiIdx = Math.floor(Math.random()*CAR_DATA.length); } while(usedIdx.includes(aiIdx));
+    usedIdx.push(aiIdx);
+    const ai = createCar(aiIdx, false);
+    const row = Math.floor((i+1)/3), col = (i+1)%3;
+    ai.x = startPt.x - Math.cos(startAngle)*(60+row*45) + Math.cos(perpAngle)*(col-1)*30;
+    ai.y = startPt.y - Math.sin(startAngle)*(60+row*45) + Math.sin(perpAngle)*(col-1)*30;
+    ai.angle = startAngle;
+    ai.aiTargetWP = 2;
+    cars.push(ai);
+  }
+  raceTimer = 0;
+}
+
+// ========================================
+// Rankings
+// ========================================
+function getRankings() {
+  return [...cars].sort((a,b) => {
+    if (a.finished&&!b.finished) return -1;
+    if (!a.finished&&b.finished) return 1;
+    if (a.finished&&b.finished) return a.finishTime-b.finishTime;
+    if (a.hp<=0&&b.hp>0) return 1;
+    if (a.hp>0&&b.hp<=0) return -1;
+    if (a.lap!==b.lap) return b.lap-a.lap;
+    return b.checkpoint-a.checkpoint;
+  });
+}
+
+// ========================================
+// Main loop
+// ========================================
+function gameLoop() {
+  raceTimer++;
+
+  // Update
+  if (cars.length > 0) {
+    updatePlayerCar(cars[0]);
+    for (const c of cars) { if (!c.isPlayer) updateAICar(c); }
+    checkCollisions();
+  }
+
+  // Draw
+  if (courseCache) ctx.drawImage(courseCache, 0, 0);
+  else { ctx.fillStyle = "#2d5a1e"; ctx.fillRect(0,0,W,H); }
+
+  const rankings = getRankings();
+  for (let i = rankings.length-1; i >= 0; i--) drawCar(rankings[i]);
+
+  // HUD update
+  if (cars.length > 0) {
+    const p = cars[0];
+    const surf = getSurfaceAt(p.x, p.y);
+    document.getElementById("hud_speed").textContent = (Math.sqrt(p.vx*p.vx+p.vy*p.vy)).toFixed(2);
+    document.getElementById("hud_hp").textContent = Math.round(p.hp);
+    document.getElementById("hud_hp").style.color = p.hp>50?"#00ff00":p.hp>25?"#f8d800":"#c83028";
+    document.getElementById("hud_lap").textContent = `${Math.min(p.lap+1,TOTAL_LAPS)}/${TOTAL_LAPS}`;
+    document.getElementById("hud_rank").textContent = `${rankings.indexOf(p)+1}/${cars.length}`;
+    document.getElementById("hud_surface").textContent = surf.surface;
+    document.getElementById("hud_time").textContent = (raceTimer/60).toFixed(1);
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+// ========================================
+// Export
+// ========================================
+function exportSingleCar() {
+  const d = carParams[selectedCarIdx];
+  const s = `  { id: ${d.id}, name: "${d.name}", img: "${d.img}", speed: ${d.speed}, accel: ${d.accel}, brake: ${d.brake}, offroad: ${d.offroad}, attack: ${d.attack}, durability: ${d.durability}, handling: ${d.handling} },`;
+  document.getElementById("outputText").value = s;
+  document.getElementById("output-area").style.display = "block";
+  document.getElementById("overlay").style.display = "block";
+}
+
+function exportAllCars() {
+  let text = "const CAR_DATA = [\n";
+  carParams.forEach(d => {
+    const namepad = ('"'+d.name+'"').padEnd(28);
+    const imgpad = ('"'+d.img+'"').padEnd(46);
+    text += `  { id: ${String(d.id).padStart(2)}, name: ${namepad}, img: ${imgpad}, speed: ${d.speed}, accel: ${d.accel}, brake: ${d.brake}, offroad: ${d.offroad}, attack: ${d.attack}, durability: ${d.durability}, handling: ${d.handling} },\n`;
+  });
+  text += "];\n";
+  document.getElementById("outputText").value = text;
+  document.getElementById("output-area").style.display = "block";
+  document.getElementById("overlay").style.display = "block";
+}
+
+function copyOutput() {
+  document.getElementById("outputText").select();
+  document.execCommand("copy");
+  alert("コピーしました！");
+}
+function closeOutput() {
+  document.getElementById("output-area").style.display = "none";
+  document.getElementById("overlay").style.display = "none";
+}
+
+// ========================================
+// Init
+// ========================================
+loadParamsToUI(0);
+buildCarGrid();
+resetRace();
+gameLoop();
+</script>
+</body>
+</html>

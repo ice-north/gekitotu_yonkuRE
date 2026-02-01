@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>激突四駆RE - コースエディター</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #e0e0e0; font-family: 'Consolas', monospace; display: flex; height: 100vh; overflow: hidden; }
+
+#sidebar {
+  width: 320px; background: #16213e; padding: 10px; overflow-y: auto; border-right: 2px solid #0f3460;
+  display: flex; flex-direction: column; gap: 8px;
+}
+#sidebar h2 { color: #f8d800; font-size: 16px; text-align: center; border-bottom: 1px solid #0f3460; padding-bottom: 6px; }
+.section { background: #0f3460; padding: 8px; border-radius: 4px; }
+.section h3 { color: #00e8d8; font-size: 13px; margin-bottom: 6px; }
+.row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; }
+.row label { width: 90px; text-align: right; flex-shrink: 0; }
+.row input[type="text"], .row input[type="number"], .row select { background: #1a1a2e; border: 1px solid #0f3460; color: #e0e0e0; padding: 3px 6px; border-radius: 3px; flex: 1; font-size: 12px; }
+.row input[type="color"] { width: 40px; height: 24px; border: none; cursor: pointer; }
+.row input[type="range"] { flex: 1; }
+button { background: #e94560; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit; }
+button:hover { background: #c83050; }
+button.secondary { background: #0f3460; border: 1px solid #00e8d8; color: #00e8d8; }
+button.secondary:hover { background: #1a3a6e; }
+button.warn { background: #a03030; }
+
+#canvas-area { flex: 1; display: flex; flex-direction: column; }
+#toolbar { background: #16213e; padding: 6px 10px; display: flex; gap: 8px; align-items: center; font-size: 12px; border-bottom: 1px solid #0f3460; }
+#toolbar .tool-btn { padding: 4px 10px; border-radius: 3px; cursor: pointer; border: 1px solid #0f3460; background: #1a1a2e; color: #e0e0e0; font-size: 12px; }
+#toolbar .tool-btn.active { background: #e94560; border-color: #e94560; }
+canvas { flex: 1; cursor: crosshair; display: block; }
+
+#wp-list { max-height: 200px; overflow-y: auto; font-size: 11px; }
+#wp-list .wp-item { display: flex; gap: 4px; align-items: center; padding: 2px 4px; border-bottom: 1px solid #1a1a2e; cursor: pointer; }
+#wp-list .wp-item:hover { background: #1a3a6e; }
+#wp-list .wp-item.selected { background: #e94560; }
+#wp-list .wp-item .idx { width: 20px; color: #f8d800; }
+#wp-list .wp-item .coords { flex: 1; }
+#wp-list .wp-item .surf { color: #00e8d8; width: 55px; }
+
+#output-area { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); background: #16213e; border: 2px solid #f8d800; padding: 20px; border-radius: 8px; z-index: 100; width: 700px; max-height: 80vh; }
+#output-area textarea { width: 100%; height: 400px; background: #0f0f0f; color: #00e8d8; font-family: monospace; font-size: 12px; border: 1px solid #0f3460; padding: 8px; }
+#overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 99; }
+.help-text { color: #888; font-size: 11px; line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>🏁 コースエディター</h2>
+
+  <div class="section">
+    <h3>コース設定</h3>
+    <div class="row"><label>名前:</label><input type="text" id="courseName" value="NEW COURSE"></div>
+    <div class="row"><label>説明:</label><input type="text" id="courseDesc" value="カスタムコース"></div>
+    <div class="row"><label>道幅:</label><input type="range" id="roadWidth" min="40" max="180" value="100"><span id="roadWidthVal">100</span></div>
+    <div class="row"><label>周回数:</label><input type="number" id="laps" min="1" max="20" value="5" style="width:50px"></div>
+    <div class="row"><label>背景色:</label><input type="color" id="bgColor" value="#2d5a1e"></div>
+    <div class="row"><label>路面色:</label><input type="color" id="roadColor" value="#707070"></div>
+    <div class="row"><label>壁色:</label><input type="color" id="wallColor" value="#c03030"></div>
+  </div>
+
+  <div class="section">
+    <h3>ウェイポイント</h3>
+    <div class="row">
+      <label>路面タイプ:</label>
+      <select id="surfaceType">
+        <option value="road">road (舗装)</option>
+        <option value="offroad">offroad (未舗装)</option>
+        <option value="ice">ice (氷)</option>
+      </select>
+    </div>
+    <div id="wp-list"></div>
+    <div class="row" style="margin-top:6px;">
+      <button class="secondary" onclick="deleteSelectedWP()">選択を削除</button>
+      <button class="warn" onclick="clearAllWP()">全削除</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>プリセット読み込み</h3>
+    <div class="row">
+      <select id="presetSelect" style="flex:1">
+        <option value="">-- 既存コースを読み込み --</option>
+      </select>
+      <button class="secondary" onclick="loadPreset()">読込</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>操作</h3>
+    <p class="help-text">
+      クリック: ウェイポイント追加<br>
+      右クリック: 最後のWPを削除<br>
+      ドラッグ: 選択WPを移動<br>
+      WPリストクリック: 選択/路面変更<br>
+      Ctrl+Z: 元に戻す<br>
+      Delete: 選択WPを削除
+    </p>
+  </div>
+
+  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+    <button onclick="exportCourse()">📋 コースデータ出力</button>
+    <button onclick="exportAllCourses()">📋 全コース出力</button>
+    <button class="secondary" onclick="importCourse()">📥 インポート</button>
+  </div>
+</div>
+
+<div id="canvas-area">
+  <div id="toolbar">
+    <span style="color:#f8d800;">ツール:</span>
+    <button class="tool-btn active" data-tool="add" onclick="setTool('add')">追加</button>
+    <button class="tool-btn" data-tool="move" onclick="setTool('move')">移動</button>
+    <button class="tool-btn" data-tool="insert" onclick="setTool('insert')">挿入</button>
+    <span style="margin-left:20px; color:#888;" id="statusBar">ウェイポイント: 0 | マウス: (0, 0)</span>
+    <span style="flex:1;"></span>
+    <label style="color:#888;"><input type="checkbox" id="showGrid" checked> グリッド</label>
+    <label style="color:#888;"><input type="checkbox" id="showPreview" checked> プレビュー</label>
+    <label style="color:#888;"><input type="checkbox" id="snapGrid"> スナップ(20px)</label>
+  </div>
+  <canvas id="editorCanvas"></canvas>
+</div>
+
+<div id="overlay" onclick="closeOutput()"></div>
+<div id="output-area">
+  <h3 style="color:#f8d800; margin-bottom:10px;">コースデータ出力</h3>
+  <textarea id="outputText" readonly></textarea>
+  <div style="margin-top:10px; display:flex; gap:8px;">
+    <button onclick="copyOutput()">📋 コピー</button>
+    <button class="secondary" onclick="closeOutput()">閉じる</button>
+  </div>
+</div>
+
+<script>
+// ========================================
+// Catmull-Rom (courses.jsと同じ)
+// ========================================
+function getCoursePoints(waypoints, resolution) {
+  const wp = waypoints;
+  const points = [];
+  const n = wp.length;
+  if (n < 2) return points;
+  for (let i = 0; i < n; i++) {
+    const p0 = wp[(i - 1 + n) % n];
+    const p1 = wp[i];
+    const p2 = wp[(i + 1) % n];
+    const p3 = wp[(i + 2) % n];
+    for (let t = 0; t < resolution; t++) {
+      const f = t / resolution;
+      const x = 0.5 * ((2*p1.x) + (-p0.x+p2.x)*f + (2*p0.x-5*p1.x+4*p2.x-p3.x)*f*f + (-p0.x+3*p1.x-3*p2.x+p3.x)*f*f*f);
+      const y = 0.5 * ((2*p1.y) + (-p0.y+p2.y)*f + (2*p0.y-5*p1.y+4*p2.y-p3.y)*f*f + (-p0.y+3*p1.y-3*p2.y+p3.y)*f*f*f);
+      points.push({ x, y, surface: p1.surface });
+    }
+  }
+  return points;
+}
+
+// ========================================
+// 既存コースプリセット (courses.jsから)
+// ========================================
+const PRESETS = [
+  { id:0, name:"OVAL CIRCUIT", description:"基本の楕円コース。初心者向け。", bgColor:"#2d5a1e", roadColor:"#707070", wallColor:"#c03030", roadWidth:100, laps:5, waypoints:[{x:600,y:160,surface:"road"},{x:930,y:220,surface:"road"},{x:1060,y:450,surface:"road"},{x:930,y:680,surface:"road"},{x:600,y:740,surface:"road"},{x:270,y:680,surface:"road"},{x:120,y:450,surface:"road"},{x:270,y:220,surface:"road"}] },
+  { id:1, name:"TECHNICAL GP", description:"S字やヘアピンが連続するテクニカルコース。", bgColor:"#2d5a1e", roadColor:"#606060", wallColor:"#c03030", roadWidth:90, laps:5, waypoints:[{x:600,y:100,surface:"road"},{x:900,y:130,surface:"road"},{x:1080,y:280,surface:"road"},{x:970,y:460,surface:"road"},{x:750,y:400,surface:"road"},{x:520,y:500,surface:"road"},{x:300,y:660,surface:"road"},{x:150,y:560,surface:"road"},{x:180,y:320,surface:"road"},{x:380,y:180,surface:"road"}] },
+  { id:2, name:"DIRT CROSS", description:"全面オフロード。グリップの低い荒れた路面。", bgColor:"#6b5535", roadColor:"#9a7d50", wallColor:"#8b6030", roadWidth:110, laps:5, waypoints:[{x:600,y:130,surface:"offroad"},{x:970,y:200,surface:"offroad"},{x:1050,y:500,surface:"offroad"},{x:820,y:720,surface:"offroad"},{x:450,y:750,surface:"offroad"},{x:150,y:600,surface:"offroad"},{x:120,y:300,surface:"offroad"},{x:300,y:130,surface:"offroad"}] },
+  { id:3, name:"ICE LAKE", description:"凍った湖の上のコース。滑りやすい！", bgColor:"#90b8d0", roadColor:"#c0dae8", wallColor:"#4080b0", roadWidth:115, laps:5, waypoints:[{x:600,y:130,surface:"ice"},{x:970,y:250,surface:"ice"},{x:1020,y:580,surface:"ice"},{x:680,y:750,surface:"ice"},{x:300,y:710,surface:"ice"},{x:150,y:440,surface:"ice"},{x:230,y:190,surface:"ice"}] },
+  { id:4, name:"MIX RALLY", description:"舗装・ダート・氷が混在するコース。", bgColor:"#3a5a2a", roadColor:"#686868", wallColor:"#c03030", roadWidth:95, laps:5, waypoints:[{x:600,y:100,surface:"road"},{x:970,y:160,surface:"road"},{x:1090,y:400,surface:"offroad"},{x:1020,y:660,surface:"offroad"},{x:750,y:780,surface:"ice"},{x:450,y:750,surface:"ice"},{x:180,y:600,surface:"offroad"},{x:120,y:340,surface:"road"},{x:300,y:150,surface:"road"}] },
+  { id:5, name:"FINAL GP", description:"全要素が詰まった最終決戦コース！", bgColor:"#1e3a1e", roadColor:"#585858", wallColor:"#d02020", roadWidth:85, laps:5, waypoints:[{x:600,y:90,surface:"road"},{x:900,y:100,surface:"road"},{x:1090,y:240,surface:"ice"},{x:1080,y:460,surface:"ice"},{x:930,y:620,surface:"offroad"},{x:720,y:510,surface:"road"},{x:570,y:660,surface:"offroad"},{x:330,y:780,surface:"offroad"},{x:150,y:640,surface:"ice"},{x:120,y:400,surface:"road"},{x:200,y:210,surface:"road"},{x:380,y:120,surface:"road"}] },
+];
+
+// ========================================
+// State
+// ========================================
+const canvas = document.getElementById("editorCanvas");
+const c = canvas.getContext("2d");
+let waypoints = [];
+let selectedWP = -1;
+let currentTool = "add";
+let dragging = false;
+let dragIdx = -1;
+let undoStack = [];
+let mouseX = 0, mouseY = 0;
+
+// Init presets dropdown
+const presetSel = document.getElementById("presetSelect");
+PRESETS.forEach((p, i) => {
+  const opt = document.createElement("option");
+  opt.value = i;
+  opt.textContent = `${i+1}. ${p.name}`;
+  presetSel.appendChild(opt);
+});
+
+// ========================================
+// Canvas resize
+// ========================================
+function resizeCanvas() {
+  const area = document.getElementById("canvas-area");
+  const toolbar = document.getElementById("toolbar");
+  canvas.width = area.clientWidth;
+  canvas.height = area.clientHeight - toolbar.offsetHeight;
+  draw();
+}
+window.addEventListener("resize", resizeCanvas);
+setTimeout(resizeCanvas, 50);
+
+// ========================================
+// Tools
+// ========================================
+function setTool(tool) {
+  currentTool = tool;
+  document.querySelectorAll(".tool-btn").forEach(b => b.classList.toggle("active", b.dataset.tool === tool));
+}
+
+function saveUndo() {
+  undoStack.push(JSON.stringify(waypoints));
+  if (undoStack.length > 50) undoStack.shift();
+}
+function undo() {
+  if (undoStack.length === 0) return;
+  waypoints = JSON.parse(undoStack.pop());
+  selectedWP = -1;
+  updateWPList();
+  draw();
+}
+
+function snap(v) {
+  return document.getElementById("snapGrid").checked ? Math.round(v / 20) * 20 : v;
+}
+
+// ========================================
+// Canvas events
+// ========================================
+canvas.addEventListener("mousedown", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = snap(e.clientX - rect.left);
+  const y = snap(e.clientY - rect.top);
+
+  if (e.button === 2) {
+    // Right click: delete last
+    if (waypoints.length > 0) {
+      saveUndo();
+      waypoints.pop();
+      selectedWP = Math.min(selectedWP, waypoints.length - 1);
+      updateWPList();
+      draw();
+    }
+    return;
+  }
+
+  // Check if clicking an existing WP
+  const hitIdx = findWPAt(x, y);
+
+  if (currentTool === "move") {
+    if (hitIdx >= 0) { dragging = true; dragIdx = hitIdx; selectedWP = hitIdx; saveUndo(); updateWPList(); }
+  } else if (currentTool === "insert") {
+    if (waypoints.length >= 2) {
+      // Insert after the nearest segment
+      const insertIdx = findNearestSegment(x, y);
+      saveUndo();
+      const surf = document.getElementById("surfaceType").value;
+      waypoints.splice(insertIdx + 1, 0, { x, y, surface: surf });
+      selectedWP = insertIdx + 1;
+      updateWPList();
+      draw();
+    }
+  } else {
+    // Add tool
+    if (hitIdx >= 0) {
+      selectedWP = hitIdx;
+      dragging = true;
+      dragIdx = hitIdx;
+      saveUndo();
+      updateWPList();
+    } else {
+      saveUndo();
+      const surf = document.getElementById("surfaceType").value;
+      waypoints.push({ x, y, surface: surf });
+      selectedWP = waypoints.length - 1;
+      updateWPList();
+      draw();
+    }
+  }
+});
+
+canvas.addEventListener("mousemove", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.clientX - rect.left;
+  mouseY = e.clientY - rect.top;
+
+  if (dragging && dragIdx >= 0) {
+    waypoints[dragIdx].x = snap(mouseX);
+    waypoints[dragIdx].y = snap(mouseY);
+  }
+  draw();
+});
+
+canvas.addEventListener("mouseup", () => { dragging = false; dragIdx = -1; });
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.key === "z") { undo(); e.preventDefault(); }
+  if (e.key === "Delete" && selectedWP >= 0) { deleteSelectedWP(); }
+});
+
+function findWPAt(x, y) {
+  for (let i = 0; i < waypoints.length; i++) {
+    const dx = waypoints[i].x - x, dy = waypoints[i].y - y;
+    if (dx * dx + dy * dy < 15 * 15) return i;
+  }
+  return -1;
+}
+
+function findNearestSegment(x, y) {
+  let minDist = Infinity, bestIdx = 0;
+  for (let i = 0; i < waypoints.length; i++) {
+    const a = waypoints[i], b = waypoints[(i + 1) % waypoints.length];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const d = (mx - x) ** 2 + (my - y) ** 2;
+    if (d < minDist) { minDist = d; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
+// ========================================
+// Draw
+// ========================================
+const surfaceColorMap = { road: "#707070", offroad: "#9a7d50", ice: "#c0dae8" };
+
+function draw() {
+  const bgColor = document.getElementById("bgColor").value;
+  const roadColor = document.getElementById("roadColor").value;
+  const wallColor = document.getElementById("wallColor").value;
+  const rw = parseInt(document.getElementById("roadWidth").value);
+  document.getElementById("roadWidthVal").textContent = rw;
+
+  c.fillStyle = bgColor;
+  c.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Grid
+  if (document.getElementById("showGrid").checked) {
+    c.strokeStyle = "rgba(255,255,255,0.05)";
+    c.lineWidth = 1;
+    for (let x = 0; x < canvas.width; x += 100) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, canvas.height); c.stroke(); }
+    for (let y = 0; y < canvas.height; y += 100) { c.beginPath(); c.moveTo(0, y); c.lineTo(canvas.width, y); c.stroke(); }
+    // Game area boundary (1200x900)
+    c.strokeStyle = "rgba(255,255,0,0.2)";
+    c.lineWidth = 2;
+    c.strokeRect(0, 0, 1200, 900);
+    c.fillStyle = "rgba(255,255,0,0.15)";
+    c.font = "11px monospace";
+    c.fillText("1200x900", 1140, 895);
+  }
+
+  // Preview spline course
+  if (document.getElementById("showPreview").checked && waypoints.length >= 3) {
+    const pts = getCoursePoints(waypoints, 20);
+
+    // Wall
+    for (let i = 0; i < pts.length; i++) {
+      const p1 = pts[i], p2 = pts[(i + 1) % pts.length];
+      c.strokeStyle = wallColor;
+      c.lineWidth = rw + 12;
+      c.lineCap = "round";
+      c.beginPath(); c.moveTo(p1.x, p1.y); c.lineTo(p2.x, p2.y); c.stroke();
+    }
+    // Groove
+    for (let i = 0; i < pts.length; i++) {
+      const p1 = pts[i], p2 = pts[(i + 1) % pts.length];
+      c.strokeStyle = "#181818";
+      c.lineWidth = rw + 4;
+      c.lineCap = "round";
+      c.beginPath(); c.moveTo(p1.x, p1.y); c.lineTo(p2.x, p2.y); c.stroke();
+    }
+    // Road surface per segment
+    const roadSurfaceColors = { road: roadColor, offroad: "#9a7d50", ice: "#c0dae8" };
+    for (let i = 0; i < pts.length; i++) {
+      const p1 = pts[i], p2 = pts[(i + 1) % pts.length];
+      c.strokeStyle = roadSurfaceColors[p1.surface] || roadColor;
+      c.lineWidth = rw;
+      c.lineCap = "round";
+      c.beginPath(); c.moveTo(p1.x, p1.y); c.lineTo(p2.x, p2.y); c.stroke();
+    }
+    // Center line dots
+    c.fillStyle = "rgba(255,255,255,0.25)";
+    for (let i = 0; i < pts.length; i += 3) {
+      if (Math.floor(i / 3) % 2 === 0) {
+        c.fillRect(Math.floor(pts[i].x / 4) * 4 - 2, Math.floor(pts[i].y / 4) * 4 - 2, 4, 4);
+      }
+    }
+    // Start checker
+    if (pts.length >= 2) {
+      const sp = pts[0], sp2 = pts[1];
+      const la = Math.atan2(sp2.y - sp.y, sp2.x - sp.x) + Math.PI / 2;
+      const half = rw / 2;
+      for (let s = -half; s < half; s += 8) {
+        const row = Math.floor((s + half) / 8);
+        for (let t = -6; t < 6; t += 8) {
+          const col = Math.floor((t + 6) / 8);
+          c.fillStyle = (row + col) % 2 === 0 ? "#fcfcfc" : "#0f0f0f";
+          c.save();
+          c.translate(sp.x, sp.y);
+          c.rotate(la);
+          c.fillRect(t, s, 8, 8);
+          c.restore();
+        }
+      }
+    }
+  }
+
+  // Draw waypoints + connections
+  if (waypoints.length >= 2) {
+    c.strokeStyle = "rgba(255,255,0,0.5)";
+    c.lineWidth = 2;
+    c.setLineDash([6, 4]);
+    c.beginPath();
+    waypoints.forEach((wp, i) => { i === 0 ? c.moveTo(wp.x, wp.y) : c.lineTo(wp.x, wp.y); });
+    c.closePath();
+    c.stroke();
+    c.setLineDash([]);
+  }
+
+  waypoints.forEach((wp, i) => {
+    const isSelected = i === selectedWP;
+    const surfColor = surfaceColorMap[wp.surface] || "#707070";
+
+    // Outer circle
+    c.beginPath();
+    c.arc(wp.x, wp.y, isSelected ? 14 : 10, 0, Math.PI * 2);
+    c.fillStyle = isSelected ? "#f8d800" : surfColor;
+    c.fill();
+    c.strokeStyle = isSelected ? "#fff" : "#000";
+    c.lineWidth = 2;
+    c.stroke();
+
+    // Index number
+    c.fillStyle = "#000";
+    c.font = "bold 11px monospace";
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.fillText(i, wp.x, wp.y);
+
+    // Surface label
+    c.fillStyle = surfColor;
+    c.font = "9px monospace";
+    c.fillText(wp.surface, wp.x, wp.y + 18);
+  });
+
+  // Start arrow on first WP
+  if (waypoints.length >= 1) {
+    c.fillStyle = "#00ff00";
+    c.font = "bold 12px monospace";
+    c.textAlign = "center";
+    c.fillText("START", waypoints[0].x, waypoints[0].y - 20);
+  }
+
+  c.textAlign = "start";
+  c.textBaseline = "alphabetic";
+
+  // Status bar
+  document.getElementById("statusBar").textContent =
+    `ウェイポイント: ${waypoints.length} | マウス: (${Math.round(mouseX)}, ${Math.round(mouseY)})` +
+    (selectedWP >= 0 ? ` | 選択: #${selectedWP} (${waypoints[selectedWP].surface})` : "");
+}
+
+// ========================================
+// WP List UI
+// ========================================
+function updateWPList() {
+  const list = document.getElementById("wp-list");
+  list.innerHTML = "";
+  waypoints.forEach((wp, i) => {
+    const div = document.createElement("div");
+    div.className = "wp-item" + (i === selectedWP ? " selected" : "");
+    div.innerHTML = `<span class="idx">${i}</span><span class="coords">(${Math.round(wp.x)}, ${Math.round(wp.y)})</span><span class="surf">${wp.surface}</span>`;
+    div.onclick = () => { selectedWP = i; updateWPList(); draw(); };
+    div.ondblclick = () => {
+      // Cycle surface type on double click
+      const surfaces = ["road", "offroad", "ice"];
+      const idx = surfaces.indexOf(wp.surface);
+      saveUndo();
+      wp.surface = surfaces[(idx + 1) % surfaces.length];
+      updateWPList();
+      draw();
+    };
+    list.appendChild(div);
+  });
+}
+
+function deleteSelectedWP() {
+  if (selectedWP >= 0 && selectedWP < waypoints.length) {
+    saveUndo();
+    waypoints.splice(selectedWP, 1);
+    selectedWP = Math.min(selectedWP, waypoints.length - 1);
+    updateWPList();
+    draw();
+  }
+}
+
+function clearAllWP() {
+  if (confirm("全ウェイポイントを削除しますか？")) {
+    saveUndo();
+    waypoints = [];
+    selectedWP = -1;
+    updateWPList();
+    draw();
+  }
+}
+
+// ========================================
+// Preset load
+// ========================================
+function loadPreset() {
+  const idx = parseInt(presetSel.value);
+  if (isNaN(idx)) return;
+  const p = PRESETS[idx];
+  saveUndo();
+  document.getElementById("courseName").value = p.name;
+  document.getElementById("courseDesc").value = p.description;
+  document.getElementById("roadWidth").value = p.roadWidth;
+  document.getElementById("roadWidthVal").textContent = p.roadWidth;
+  document.getElementById("laps").value = p.laps;
+  document.getElementById("bgColor").value = p.bgColor;
+  document.getElementById("roadColor").value = p.roadColor;
+  document.getElementById("wallColor").value = p.wallColor;
+  waypoints = JSON.parse(JSON.stringify(p.waypoints));
+  selectedWP = -1;
+  updateWPList();
+  draw();
+}
+
+// ========================================
+// Export
+// ========================================
+function buildCourseObj(id) {
+  return {
+    id: id || 0,
+    name: document.getElementById("courseName").value,
+    description: document.getElementById("courseDesc").value,
+    bgColor: document.getElementById("bgColor").value,
+    roadColor: document.getElementById("roadColor").value,
+    wallColor: document.getElementById("wallColor").value,
+    roadWidth: parseInt(document.getElementById("roadWidth").value),
+    laps: parseInt(document.getElementById("laps").value),
+    waypoints: waypoints.map(wp => ({ x: Math.round(wp.x), y: Math.round(wp.y), surface: wp.surface })),
+  };
+}
+
+function courseToString(obj) {
+  let s = "  {\n";
+  s += `    id: ${obj.id},\n`;
+  s += `    name: "${obj.name}",\n`;
+  s += `    description: "${obj.description}",\n`;
+  s += `    bgColor: "${obj.bgColor}",\n`;
+  s += `    roadColor: "${obj.roadColor}",\n`;
+  s += `    wallColor: "${obj.wallColor}",\n`;
+  s += `    roadWidth: ${obj.roadWidth},\n`;
+  s += `    laps: ${obj.laps},\n`;
+  s += `    waypoints: [\n`;
+  obj.waypoints.forEach((wp, i) => {
+    s += `      { x: ${wp.x}, y: ${wp.y}, surface: "${wp.surface}" }`;
+    s += i < obj.waypoints.length - 1 ? ",\n" : "\n";
+  });
+  s += `    ],\n`;
+  s += `  }`;
+  return s;
+}
+
+function exportCourse() {
+  const obj = buildCourseObj(0);
+  const text = courseToString(obj);
+  document.getElementById("outputText").value = text;
+  document.getElementById("output-area").style.display = "block";
+  document.getElementById("overlay").style.display = "block";
+}
+
+function exportAllCourses() {
+  // Export current + all presets as a full COURSES array
+  let text = "const COURSES = [\n";
+  PRESETS.forEach((p, i) => {
+    text += courseToString({ ...p, id: i }) + ",\n";
+  });
+  // Add current as extra
+  const cur = buildCourseObj(PRESETS.length);
+  text += courseToString(cur) + ",\n";
+  text += "];\n";
+  document.getElementById("outputText").value = text;
+  document.getElementById("output-area").style.display = "block";
+  document.getElementById("overlay").style.display = "block";
+}
+
+function importCourse() {
+  const input = prompt("コースデータのJSONを貼り付けてください\n例: {\"name\":\"TEST\",\"waypoints\":[{\"x\":100,\"y\":100,\"surface\":\"road\"},...]}");
+  if (!input) return;
+  try {
+    const obj = JSON.parse(input);
+    saveUndo();
+    if (obj.name) document.getElementById("courseName").value = obj.name;
+    if (obj.description) document.getElementById("courseDesc").value = obj.description;
+    if (obj.bgColor) document.getElementById("bgColor").value = obj.bgColor;
+    if (obj.roadColor) document.getElementById("roadColor").value = obj.roadColor;
+    if (obj.wallColor) document.getElementById("wallColor").value = obj.wallColor;
+    if (obj.roadWidth) { document.getElementById("roadWidth").value = obj.roadWidth; document.getElementById("roadWidthVal").textContent = obj.roadWidth; }
+    if (obj.laps) document.getElementById("laps").value = obj.laps;
+    if (obj.waypoints) waypoints = obj.waypoints;
+    selectedWP = -1;
+    updateWPList();
+    draw();
+  } catch (e) { alert("パースエラー: " + e.message); }
+}
+
+function copyOutput() {
+  const ta = document.getElementById("outputText");
+  ta.select();
+  document.execCommand("copy");
+  alert("コピーしました！");
+}
+
+function closeOutput() {
+  document.getElementById("output-area").style.display = "none";
+  document.getElementById("overlay").style.display = "none";
+}
+
+// Slider live update
+document.getElementById("roadWidth").addEventListener("input", draw);
+document.getElementById("bgColor").addEventListener("input", draw);
+document.getElementById("roadColor").addEventListener("input", draw);
+document.getElementById("wallColor").addEventListener("input", draw);
+
+// Init
+updateWPList();
+draw();
+</script>
+</body>
+</html>
