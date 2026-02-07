@@ -212,7 +212,7 @@ window.addEventListener("keydown", e => {
 window.addEventListener("keyup", e => { keys[e.key] = false; });
 
 // ========================================
-// Build car grid
+// Build car grid (sprite sheet: show frame 0 only)
 // ========================================
 function buildCarGrid() {
   const grid = document.getElementById("car-grid");
@@ -220,11 +220,23 @@ function buildCarGrid() {
   CAR_DATA.forEach((d, i) => {
     const div = document.createElement("div");
     div.className = "car-thumb" + (i === selectedCarIdx ? " selected" : "");
-    const img = document.createElement("img");
-    img.src = d.img;
-    img.width = 24; img.height = 32;
-    img.title = d.name;
-    div.appendChild(img);
+    const cvs = document.createElement("canvas");
+    cvs.width = 24; cvs.height = 32;
+    cvs.title = d.name;
+    cvs.style.imageRendering = "pixelated";
+    div.appendChild(cvs);
+    // Draw first frame when image is ready
+    const srcImg = carImages[i];
+    const drawThumb = () => {
+      if (srcImg.complete && srcImg.naturalWidth > 0) {
+        const tc = cvs.getContext("2d");
+        tc.imageSmoothingEnabled = false;
+        const frameW = srcImg.naturalWidth / 2;
+        tc.drawImage(srcImg, 0, 0, frameW, srcImg.naturalHeight, 0, 0, 24, 32);
+      }
+    };
+    if (srcImg.complete) drawThumb();
+    else srcImg.addEventListener("load", drawThumb);
     div.onclick = () => { selectedCarIdx = i; loadParamsToUI(i); buildCarGrid(); resetRace(); };
     grid.appendChild(div);
   });
@@ -491,8 +503,15 @@ function buildCourseCache(course) {
 }
 
 // ========================================
-// Draw car
+// Draw car (2-frame sprite sheet support)
 // ========================================
+function getCarFrame(c) {
+  const spd = Math.abs(c.speed);
+  if (spd < 0.1) return 0;
+  const animInterval = Math.max(2, Math.floor(12 - spd * 2));
+  return Math.floor(raceTimer / animInterval) % 2;
+}
+
 function drawCar(c) {
   if (c.hp <= 0 && c.invincible <= -60) return;
   const img = carImages[c.dataIndex];
@@ -501,11 +520,16 @@ function drawCar(c) {
   ctx.rotate(c.angle + Math.PI/2);
   ctx.imageSmoothingEnabled = false;
   if (img && img.complete && img.naturalWidth > 0) {
+    // Sprite sheet: 2 frames horizontal
+    const frameW = img.naturalWidth / 2;
+    const frameH = img.naturalHeight;
+    const frame = getCarFrame(c);
+    const sx = frame * frameW;
     if (c.specialActive) { ctx.shadowColor = "#f8d800"; ctx.shadowBlur = 10; }
     if (c.invincible > 0) ctx.globalAlpha = Math.floor(c.invincible/4)%2===0?1:0.3;
     else if (c.hp <= 0) ctx.globalAlpha = 0.25;
     else if (c.hp < MAX_HP*0.3) ctx.globalAlpha = 0.5+Math.sin(raceTimer*0.4)*0.5;
-    ctx.drawImage(img, -img.naturalWidth/2, -img.naturalHeight/2);
+    ctx.drawImage(img, sx, 0, frameW, frameH, -frameW/2, -frameH/2, frameW, frameH);
   } else {
     ctx.fillStyle = c.isPlayer ? "#c83028" : "#0058a8";
     ctx.fillRect(-5, -7, 10, 14);

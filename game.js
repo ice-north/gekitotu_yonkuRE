@@ -318,8 +318,17 @@ function drawCourse() {
 }
 
 // ========================================
-// 車描画
+// 車描画（2コマスプライトシート対応）
 // ========================================
+function getCarFrame(c) {
+  // 速度が低い場合はフレーム0固定
+  const spd = Math.abs(c.speed);
+  if (spd < 0.1) return 0;
+  // 速度が速いほどアニメーション間隔が短い（2〜12フレーム）
+  const animInterval = Math.max(2, Math.floor(12 - spd * 2));
+  return Math.floor(raceTimer / animInterval) % 2;
+}
+
 function drawCar(c) {
   if (c.hp <= 0 && c.invincible <= -60) return; // 破壊後しばらくで消える
   const coloredImg = getColoredCar(c.dataIndex, c.colorIndex);
@@ -329,8 +338,14 @@ function drawCar(c) {
   ctx.imageSmoothingEnabled = false;
 
   if (coloredImg) {
-    const w = coloredImg.width * SCALE;
-    const h = coloredImg.height * SCALE;
+    // スプライトシート: 横2コマ
+    const frameW = coloredImg.width / 2;
+    const frameH = coloredImg.height;
+    const frame = getCarFrame(c);
+    const sx = frame * frameW;
+    const dw = frameW * SCALE;
+    const dh = frameH * SCALE;
+
     if (c.specialActive) {
       ctx.shadowColor = FC_YELLOW;
       ctx.shadowBlur = 10;
@@ -343,7 +358,7 @@ function drawCar(c) {
     } else if (c.hp < MAX_HP * 0.3) {
       ctx.globalAlpha = 0.5 + Math.sin(raceTimer * 0.4) * 0.5;
     }
-    ctx.drawImage(coloredImg, -w / 2, -h / 2, w, h);
+    ctx.drawImage(coloredImg, sx, 0, frameW, frameH, -dw / 2, -dh / 2, dw, dh);
   } else {
     ctx.fillStyle = c.isPlayer ? FC_RED : FC_BLUE;
     ctx.fillRect(-5, -7, 10, 14);
@@ -691,7 +706,9 @@ function drawTitle() {
       const img = carImagesOriginal[idx];
       if (img && img.complete && img.naturalWidth > 0) {
         const px = ((t + i * 150) % (W + 100)) - 50;
-        ctx.drawImage(img, px, 660, img.naturalWidth, img.naturalHeight);
+        // スプライトシート: フレーム0のみ描画
+        const frameW = img.naturalWidth / 2;
+        ctx.drawImage(img, 0, 0, frameW, img.naturalHeight, px, 660, frameW, img.naturalHeight);
       }
     }
     ctx.imageSmoothingEnabled = true;
@@ -746,13 +763,15 @@ function drawCarSelect() {
   fcWindow(100, 20, W - 200, 50, FC_CYAN);
   fcTextWithShadow(`${plabel} マシン セレクト`, W / 2, 55, FC_CYAN, 26, "center");
 
-  // 選択中の車（4倍拡大）
+  // 選択中の車（4倍拡大、スプライトシートのフレーム0）
   const img = getColoredCar(sel, colIdx);
   if (img) {
     ctx.imageSmoothingEnabled = false;
-    const dw = img.width * 4;
-    const dh = img.height * 4;
-    ctx.drawImage(img, W / 2 - dw / 2, 90, dw, dh);
+    const frameW = img.width / 2;
+    const frameH = img.height;
+    const dw = frameW * 4;
+    const dh = frameH * 4;
+    ctx.drawImage(img, 0, 0, frameW, frameH, W / 2 - dw / 2, 90, dw, dh);
     ctx.imageSmoothingEnabled = true;
   }
 
@@ -806,7 +825,9 @@ function drawCarSelect() {
       const tImg = getColoredCar(idx, idx === sel ? colIdx : 0);
       if (tImg) {
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(tImg, tx, ty, tImg.width, tImg.height);
+        // スプライトシート: フレーム0のみ
+        const tFrameW = tImg.width / 2;
+        ctx.drawImage(tImg, 0, 0, tFrameW, tImg.height, tx, ty, tFrameW, tImg.height);
         ctx.imageSmoothingEnabled = true;
       }
     }
@@ -962,7 +983,9 @@ function drawResult() {
     const img = getColoredCar(c.dataIndex, c.colorIndex);
     if (img) {
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 210, y - 12, img.width * 2, img.height * 2);
+      // スプライトシート: フレーム0のみ
+      const frameW = img.width / 2;
+      ctx.drawImage(img, 0, 0, frameW, img.height, 210, y - 12, frameW * 2, img.height * 2);
       ctx.imageSmoothingEnabled = true;
     }
     fcText(CAR_DATA[c.dataIndex].name, 260, y, col, 16);
@@ -1006,7 +1029,9 @@ function drawGrandPrixResult() {
     const img = getColoredCar(entry.dataIndex, entry.colorIndex || 0);
     if (img) {
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 260, y - 12, img.width * 2, img.height * 2);
+      // スプライトシート: フレーム0のみ
+      const frameW = img.width / 2;
+      ctx.drawImage(img, 0, 0, frameW, img.height, 260, y - 12, frameW * 2, img.height * 2);
       ctx.imageSmoothingEnabled = true;
     }
     fcText(CAR_DATA[entry.dataIndex].name, 310, y, col, 16);
