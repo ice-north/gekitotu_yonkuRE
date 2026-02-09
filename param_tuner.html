@@ -322,6 +322,7 @@ function createCar(dataIndex, isPlayer) {
     specialTimer: 0, specialActive: false, specialDuration: 0,
     invincible: INVINCIBLE_TIME, damageCooldown: 0,
     knockbackX: 0, knockbackY: 0,
+    spinVelocity: 0,
     maxSpeed: 1.5 + d.speed * 0.45,
     accelRate: 0.03 + d.accel * 0.018,
     brakeRate: 0.04 + d.brake * 0.015,
@@ -352,6 +353,12 @@ function getSurfaceAt(x, y) {
 // Physics (same as game.js)
 // ========================================
 function applyCarPhysics(c) {
+  // スピン適用
+  if (Math.abs(c.spinVelocity) > 0.001) {
+    c.angle += c.spinVelocity;
+    c.spinVelocity *= 0.92;
+    if (Math.abs(c.spinVelocity) < 0.005) c.spinVelocity = 0;
+  }
   const targetVx = Math.cos(c.angle) * c.speed;
   const targetVy = Math.sin(c.angle) * c.speed;
   const surf = getSurfaceAt(c.x, c.y);
@@ -366,10 +373,10 @@ function applyCarPhysics(c) {
   if (Math.abs(c.knockbackX) < 0.01) c.knockbackX = 0;
   if (Math.abs(c.knockbackY) < 0.01) c.knockbackY = 0;
   c.x += c.vx; c.y += c.vy;
-  if (c.x < 10) { c.x = 10; c.vx = Math.abs(c.vx)*0.5; c.knockbackX = 1; }
-  if (c.x > W-10) { c.x = W-10; c.vx = -Math.abs(c.vx)*0.5; c.knockbackX = -1; }
-  if (c.y < 10) { c.y = 10; c.vy = Math.abs(c.vy)*0.5; c.knockbackY = 1; }
-  if (c.y > H-10) { c.y = H-10; c.vy = -Math.abs(c.vy)*0.5; c.knockbackY = -1; }
+  if (c.x < 10) { c.x = 10; c.vx = Math.abs(c.vx)*0.5; c.knockbackX = 1; c.spinVelocity += 0.1; }
+  if (c.x > W-10) { c.x = W-10; c.vx = -Math.abs(c.vx)*0.5; c.knockbackX = -1; c.spinVelocity -= 0.1; }
+  if (c.y < 10) { c.y = 10; c.vy = Math.abs(c.vy)*0.5; c.knockbackY = 1; c.spinVelocity += 0.1; }
+  if (c.y > H-10) { c.y = H-10; c.vy = -Math.abs(c.vy)*0.5; c.knockbackY = -1; c.spinVelocity -= 0.1; }
   if (c.invincible > 0) c.invincible--;
   if (c.damageCooldown > 0) c.damageCooldown--;
 }
@@ -446,23 +453,66 @@ function checkCollisions() {
         const nx = dx/dist, ny = dy/dist, overlap = 14-dist;
         a.x -= nx*overlap*0.5; a.y -= ny*overlap*0.5;
         b.x += nx*overlap*0.5; b.y += ny*overlap*0.5;
-        const knockForce = (Math.abs(a.speed)+Math.abs(b.speed)+1)*0.6;
-        a.knockbackX -= nx*knockForce; a.knockbackY -= ny*knockForce;
-        b.knockbackX += nx*knockForce; b.knockbackY += ny*knockForce;
-        a.speed *= 0.5; b.speed *= 0.5;
-        if (a.invincible <= 0 && a.damageCooldown <= 0) applyDamage(a, b, nx, ny);
-        if (b.invincible <= 0 && b.damageCooldown <= 0) applyDamage(b, a, -nx, -ny);
+
+        const collisionAngle = Math.atan2(dy, dx);
+        let relAngleA = collisionAngle - a.angle;
+        while (relAngleA > Math.PI) relAngleA -= Math.PI*2;
+        while (relAngleA < -Math.PI) relAngleA += Math.PI*2;
+        let relAngleB = (collisionAngle + Math.PI) - b.angle;
+        while (relAngleB > Math.PI) relAngleB -= Math.PI*2;
+        while (relAngleB < -Math.PI) relAngleB += Math.PI*2;
+
+        const aHitFront = Math.abs(relAngleA) < Math.PI/4;
+        const aHitSide = Math.abs(relAngleA) >= Math.PI/4 && Math.abs(relAngleA) < Math.PI*3/4;
+        const bHitFront = Math.abs(relAngleB) < Math.PI/4;
+        const bHitSide = Math.abs(relAngleB) >= Math.PI/4 && Math.abs(relAngleB) < Math.PI*3/4;
+        const bHitRear = Math.abs(relAngleB) >= Math.PI*3/4;
+        const aHitRear = Math.abs(relAngleA) >= Math.PI*3/4;
+
+        const aIsAttacker = aHitFront && (bHitSide || bHitRear);
+        const bIsAttacker = bHitFront && (aHitSide || aHitRear);
+        const isSideCollision = aHitSide && bHitSide;
+        const totalSpeed = Math.abs(a.speed) + Math.abs(b.speed) + 0.5;
+
+        if (isSideCollision) {
+          const steerForce = totalSpeed * 0.04;
+          if (relAngleA > 0) { a.spinVelocity -= steerForce; b.spinVelocity += steerForce; }
+          else { a.spinVelocity += steerForce; b.spinVelocity -= steerForce; }
+          const knockForce = totalSpeed * 0.3;
+          a.knockbackX -= nx*knockForce; a.knockbackY -= ny*knockForce;
+          b.knockbackX += nx*knockForce; b.knockbackY += ny*knockForce;
+          a.speed *= 0.8; b.speed *= 0.8;
+        } else if (aIsAttacker) {
+          a.speed *= 0.5;
+          const knockForce = totalSpeed * 0.8;
+          b.knockbackX += nx*knockForce; b.knockbackY += ny*knockForce;
+          const spinDir = relAngleB > 0 ? 1 : -1;
+          b.spinVelocity += spinDir * (0.15 + Math.abs(a.speed)*0.05);
+          b.speed *= 0.3;
+        } else if (bIsAttacker) {
+          b.speed *= 0.5;
+          const knockForce = totalSpeed * 0.8;
+          a.knockbackX -= nx*knockForce; a.knockbackY -= ny*knockForce;
+          const spinDir = relAngleA > 0 ? 1 : -1;
+          a.spinVelocity += spinDir * (0.15 + Math.abs(b.speed)*0.05);
+          a.speed *= 0.3;
+        } else {
+          const knockForce = totalSpeed * 0.5;
+          a.knockbackX -= nx*knockForce; a.knockbackY -= ny*knockForce;
+          b.knockbackX += nx*knockForce; b.knockbackY += ny*knockForce;
+          a.speed *= 0.4; b.speed *= 0.4;
+        }
+
+        if (a.invincible <= 0 && a.damageCooldown <= 0 && !aHitFront) applyDamage(a, b, aIsAttacker);
+        if (b.invincible <= 0 && b.damageCooldown <= 0 && !bHitFront) applyDamage(b, a, bIsAttacker);
       }
     }
   }
 }
 
-function applyDamage(victim, attacker, nx, ny) {
-  let relAngle = Math.atan2(ny, nx) - victim.angle;
-  while (relAngle > Math.PI) relAngle -= Math.PI*2;
-  while (relAngle < -Math.PI) relAngle += Math.PI*2;
-  if (Math.abs(relAngle) < Math.PI/4) return;
-  const dmg = Math.max(0.5, attacker.attackPower * 0.5 - victim.durability * 0.2);
+function applyDamage(victim, attacker, victimWasAttacker) {
+  const attackMul = victimWasAttacker ? 0.3 : 1.0;
+  const dmg = Math.max(0.3, attacker.attackPower * 0.4 - victim.durability * 0.15) * attackMul;
   victim.hp = Math.max(0, victim.hp - dmg * (attacker.specialActive ? 2.5 : 1));
   victim.damageCooldown = COLLISION_COOLDOWN;
 }

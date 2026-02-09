@@ -117,6 +117,7 @@ function createCar(dataIndex, isPlayer, playerId, colorIdx) {
     invincible: INVINCIBLE_TIME,  // 無敵時間
     damageCooldown: 0,            // ダメージクールダウン
     knockbackX: 0, knockbackY: 0, // 弾かれベクトル
+    spinVelocity: 0,              // スピン速度（くるくる回転用）
     maxSpeed:     1.5 + d.speed * 0.45,
     accelRate:    0.03 + d.accel * 0.018,
     brakeRate:    0.04 + d.brake * 0.015,
@@ -399,6 +400,13 @@ function getSurfaceAt(x, y) {
 // 慣性付き車移動の共通処理
 // ========================================
 function applyCarPhysics(c) {
+  // スピン適用（くるくる回転）
+  if (Math.abs(c.spinVelocity) > 0.001) {
+    c.angle += c.spinVelocity;
+    c.spinVelocity *= 0.92; // スピン減衰
+    if (Math.abs(c.spinVelocity) < 0.005) c.spinVelocity = 0;
+  }
+
   // 慣性: vx/vyをangleとspeedから更新（徐々に追従）
   const targetVx = Math.cos(c.angle) * c.speed;
   const targetVy = Math.sin(c.angle) * c.speed;
@@ -425,10 +433,10 @@ function applyCarPhysics(c) {
   c.y += c.vy;
 
   // 画面端バウンド
-  if (c.x < 10) { c.x = 10; c.vx = Math.abs(c.vx) * 0.5; c.knockbackX = 1; }
-  if (c.x > W - 10) { c.x = W - 10; c.vx = -Math.abs(c.vx) * 0.5; c.knockbackX = -1; }
-  if (c.y < 10) { c.y = 10; c.vy = Math.abs(c.vy) * 0.5; c.knockbackY = 1; }
-  if (c.y > H - 10) { c.y = H - 10; c.vy = -Math.abs(c.vy) * 0.5; c.knockbackY = -1; }
+  if (c.x < 10) { c.x = 10; c.vx = Math.abs(c.vx) * 0.5; c.knockbackX = 1; c.spinVelocity += 0.1; }
+  if (c.x > W - 10) { c.x = W - 10; c.vx = -Math.abs(c.vx) * 0.5; c.knockbackX = -1; c.spinVelocity -= 0.1; }
+  if (c.y < 10) { c.y = 10; c.vy = Math.abs(c.vy) * 0.5; c.knockbackY = 1; c.spinVelocity += 0.1; }
+  if (c.y > H - 10) { c.y = H - 10; c.vy = -Math.abs(c.vy) * 0.5; c.knockbackY = -1; c.spinVelocity -= 0.1; }
 
   // タイマー更新
   if (c.invincible > 0) c.invincible--;
@@ -536,7 +544,7 @@ function updateCheckpoint(c) {
 }
 
 // ========================================
-// 衝突判定（弾かれる + ダメージクールダウン）
+// 衝突判定（FC激突四駆バトル風）
 // ========================================
 function checkCollisions() {
   for (let i = 0; i < cars.length; i++) {
@@ -556,38 +564,102 @@ function checkCollisions() {
         b.x += nx * overlap * 0.5;
         b.y += ny * overlap * 0.5;
 
-        // 弾かれノックバック（速度に応じた強さ）
-        const totalSpeed = Math.abs(a.speed) + Math.abs(b.speed) + 1;
-        const knockForce = totalSpeed * 0.6;
-        a.knockbackX -= nx * knockForce;
-        a.knockbackY -= ny * knockForce;
-        b.knockbackX += nx * knockForce;
-        b.knockbackY += ny * knockForce;
+        // 衝突角度を計算（各車から見た相手の方向）
+        const collisionAngle = Math.atan2(dy, dx);
 
-        // 速度減衰
-        a.speed *= 0.5;
-        b.speed *= 0.5;
+        // aから見たbの相対角度
+        let relAngleA = collisionAngle - a.angle;
+        while (relAngleA > Math.PI) relAngleA -= Math.PI * 2;
+        while (relAngleA < -Math.PI) relAngleA += Math.PI * 2;
+
+        // bから見たaの相対角度
+        let relAngleB = (collisionAngle + Math.PI) - b.angle;
+        while (relAngleB > Math.PI) relAngleB -= Math.PI * 2;
+        while (relAngleB < -Math.PI) relAngleB += Math.PI * 2;
+
+        // 衝突タイプ判定
+        const aHitFront = Math.abs(relAngleA) < Math.PI / 4;        // aの前方でぶつかった
+        const aHitSide = Math.abs(relAngleA) >= Math.PI / 4 && Math.abs(relAngleA) < Math.PI * 3 / 4;
+        const aHitRear = Math.abs(relAngleA) >= Math.PI * 3 / 4;    // aの後方でぶつかった
+
+        const bHitFront = Math.abs(relAngleB) < Math.PI / 4;
+        const bHitSide = Math.abs(relAngleB) >= Math.PI / 4 && Math.abs(relAngleB) < Math.PI * 3 / 4;
+        const bHitRear = Math.abs(relAngleB) >= Math.PI * 3 / 4;
+
+        // 速度差で攻撃側/被害側を判定
+        const aIsAttacker = aHitFront && (bHitSide || bHitRear);
+        const bIsAttacker = bHitFront && (aHitSide || aHitRear);
+        const isSideCollision = aHitSide && bHitSide;
+
+        const totalSpeed = Math.abs(a.speed) + Math.abs(b.speed) + 0.5;
+
+        if (isSideCollision) {
+          // 横衝突: 両者ハンドルが反作用
+          const steerForce = totalSpeed * 0.04;
+          if (relAngleA > 0) {
+            a.spinVelocity -= steerForce;
+            b.spinVelocity += steerForce;
+          } else {
+            a.spinVelocity += steerForce;
+            b.spinVelocity -= steerForce;
+          }
+          // 軽いノックバック
+          const knockForce = totalSpeed * 0.3;
+          a.knockbackX -= nx * knockForce;
+          a.knockbackY -= ny * knockForce;
+          b.knockbackX += nx * knockForce;
+          b.knockbackY += ny * knockForce;
+          // 両者少し減速
+          a.speed *= 0.8;
+          b.speed *= 0.8;
+        } else if (aIsAttacker) {
+          // aが攻撃側: aは50%減速、bはスピン+吹き飛び
+          a.speed *= 0.5;
+          const knockForce = totalSpeed * 0.8;
+          b.knockbackX += nx * knockForce;
+          b.knockbackY += ny * knockForce;
+          // bをくるくる回転
+          const spinDir = relAngleB > 0 ? 1 : -1;
+          b.spinVelocity += spinDir * (0.15 + Math.abs(a.speed) * 0.05);
+          b.speed *= 0.3;
+        } else if (bIsAttacker) {
+          // bが攻撃側: bは50%減速、aはスピン+吹き飛び
+          b.speed *= 0.5;
+          const knockForce = totalSpeed * 0.8;
+          a.knockbackX -= nx * knockForce;
+          a.knockbackY -= ny * knockForce;
+          // aをくるくる回転
+          const spinDir = relAngleA > 0 ? 1 : -1;
+          a.spinVelocity += spinDir * (0.15 + Math.abs(b.speed) * 0.05);
+          a.speed *= 0.3;
+        } else {
+          // 正面衝突など: 両者弾かれる
+          const knockForce = totalSpeed * 0.5;
+          a.knockbackX -= nx * knockForce;
+          a.knockbackY -= ny * knockForce;
+          b.knockbackX += nx * knockForce;
+          b.knockbackY += ny * knockForce;
+          a.speed *= 0.4;
+          b.speed *= 0.4;
+        }
 
         // ダメージ（無敵・クールダウン考慮）
-        if (a.invincible <= 0 && a.damageCooldown <= 0) {
-          applyCollisionDamage(a, b, nx, ny);
+        if (a.invincible <= 0 && a.damageCooldown <= 0 && !aHitFront) {
+          applyCollisionDamage(a, b, aIsAttacker, bIsAttacker);
         }
-        if (b.invincible <= 0 && b.damageCooldown <= 0) {
-          applyCollisionDamage(b, a, -nx, -ny);
+        if (b.invincible <= 0 && b.damageCooldown <= 0 && !bHitFront) {
+          applyCollisionDamage(b, a, bIsAttacker, aIsAttacker);
         }
       }
     }
   }
 }
 
-function applyCollisionDamage(victim, attacker, nx, ny) {
-  const hitAngle = Math.atan2(ny, nx);
-  let relAngle = hitAngle - victim.angle;
-  while (relAngle > Math.PI) relAngle -= Math.PI * 2;
-  while (relAngle < -Math.PI) relAngle += Math.PI * 2;
-  // 前方（±45度）はダメージ無し
-  if (Math.abs(relAngle) < Math.PI / 4) return;
-  const dmg = Math.max(0.5, attacker.attackPower * 0.5 - victim.durability * 0.2);
+function applyCollisionDamage(victim, attacker, victimWasAttacker, attackerWasAttacker) {
+  // 前方からの衝突はダメージ無し（呼び出し側でチェック済み）
+  // 攻撃側だった場合はダメージ軽減
+  const attackMul = victimWasAttacker ? 0.3 : 1.0;
+  const dmg = Math.max(0.3, attacker.attackPower * 0.4 - victim.durability * 0.15) * attackMul;
   const specialBonus = attacker.specialActive ? 2.5 : 1;
   victim.hp = Math.max(0, victim.hp - dmg * specialBonus);
   victim.damageCooldown = COLLISION_COOLDOWN;
