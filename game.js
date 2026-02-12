@@ -547,9 +547,17 @@ function updatePlayerCar(c, upKey, downKey, leftKey, rightKey, specialKey) {
   else if (surf.surface === "offroad") { frictionMul = 0.5 + c.offroadRate * 0.5; turnMul = 0.8; }
   else if (surf.surface === "ice")     { frictionMul = 1.05; turnMul = 0.4; }
 
-  if (keys[upKey]) {
+  // 1Pはゲームパッド入力も受け付ける
+  const useGamepad = c.playerId === 0;
+  const accelInput = keys[upKey] || (useGamepad && gpButton("accel"));
+  const brakeInput = keys[downKey] || (useGamepad && gpButton("brake"));
+  const leftInput = keys[leftKey] || (useGamepad && gpButton("left"));
+  const rightInput = keys[rightKey] || (useGamepad && gpButton("right"));
+  const specialInput = keys[specialKey] || (useGamepad && gpButton("special"));
+
+  if (accelInput) {
     c.speed = Math.min(c.speed + c.accelRate * frictionMul, c.maxSpeed * frictionMul);
-  } else if (keys[downKey]) {
+  } else if (brakeInput) {
     c.speed = Math.max(c.speed - c.brakeRate, -c.maxSpeed * 0.3);
   } else {
     if (c.speed > 0) c.speed = Math.max(c.speed - 0.02, 0);
@@ -558,13 +566,13 @@ function updatePlayerCar(c, upKey, downKey, leftKey, rightKey, specialKey) {
 
   if (Math.abs(c.speed) > 0.05) {
     const dir = c.speed > 0 ? 1 : -1;
-    if (keys[leftKey]) c.angle -= c.handleRate * turnMul * dir;
-    if (keys[rightKey]) c.angle += c.handleRate * turnMul * dir;
+    if (leftInput) c.angle -= c.handleRate * turnMul * dir;
+    if (rightInput) c.angle += c.handleRate * turnMul * dir;
   }
 
   // スペシャル
   if (c.specialTimer > 0) c.specialTimer--;
-  if (keys[specialKey] && c.specialTimer <= 0 && !c.specialActive) {
+  if (specialInput && c.specialTimer <= 0 && !c.specialActive) {
     c.specialActive = true;
     c.specialDuration = 90;
     c.specialTimer = SPECIAL_COOLDOWN;
@@ -845,6 +853,7 @@ function getRankings() {
 // ========================================
 // タイトル画面
 // ========================================
+let titleMenuIdx = 0;
 function drawTitle() {
   ctx.fillStyle = FC_BLACK;
   ctx.fillRect(0, 0, W, H);
@@ -858,8 +867,23 @@ function drawTitle() {
   fcTextWithShadow("R  E", W / 2, 330, FC_RED, 72, "center");
   fcText("GEKITOTSU YONKU RE", W / 2, 400, FC_CYAN, 18, "center");
 
-  if (Math.floor(raceTimer / 30) % 2 === 0) {
-    fcText("- PRESS ENTER -", W / 2, 520, FC_WHITE, 22, "center");
+  // メニュー
+  const menuItems = ["START", "CONFIG"];
+  menuItems.forEach((item, i) => {
+    const y = 500 + i * 50;
+    const selected = i === titleMenuIdx;
+    const cursor = selected ? "▶ " : "  ";
+    const color = selected ? FC_YELLOW : "#606060";
+    if (selected && Math.floor(raceTimer / 15) % 2 === 0) {
+      fcText(cursor + item, W / 2 - 60, y, color, 22);
+    } else {
+      fcText(cursor + item, W / 2 - 60, y, selected ? FC_WHITE : "#505050", 22);
+    }
+  });
+
+  // ゲームパッド接続状態
+  if (gpConnected) {
+    fcText("🎮", W / 2 + 100, 510, FC_GREEN, 14, "center");
   }
 
   if (imagesLoaded > 0) {
@@ -1450,16 +1474,56 @@ function drawControllerConfig() {
 // ========================================
 // 入力処理
 // ========================================
+// キーボードまたはゲームパッドの入力を統一的に処理
+function inputUp() { return onKeyOnce("ArrowUp") || gpButtonOnce("up"); }
+function inputDown() { return onKeyOnce("ArrowDown") || gpButtonOnce("down"); }
+function inputLeft() { return onKeyOnce("ArrowLeft") || gpButtonOnce("left"); }
+function inputRight() { return onKeyOnce("ArrowRight") || gpButtonOnce("right"); }
+function inputConfirm() { return onKeyOnce("Enter") || gpButtonOnce("accel") || gpButtonOnce("start"); }
+function inputCancel() { return onKeyOnce("Escape") || gpButtonOnce("brake") || gpButtonOnce("select"); }
+
 function handleInput() {
   switch (gameState) {
     case "title":
-      if (onKeyOnce("Enter")) { gameState = "modeSelect"; modeSelectIdx = 0; raceTimer = 0; }
+      if (inputUp()) titleMenuIdx = (titleMenuIdx - 1 + 2) % 2;
+      if (inputDown()) titleMenuIdx = (titleMenuIdx + 1) % 2;
+      if (inputConfirm()) {
+        if (titleMenuIdx === 0) {
+          gameState = "modeSelect"; modeSelectIdx = 0; raceTimer = 0;
+        } else {
+          gameState = "config"; configSelectIdx = 0; gpConfiguring = null; raceTimer = 0;
+        }
+      }
+      break;
+
+    case "config":
+      if (gpConfiguring) {
+        // ボタン割り当て中
+        const pressed = gpAnyPressed();
+        if (pressed) {
+          gpConfig[gpConfiguring] = pressed;
+          gpConfiguring = null;
+        }
+        if (onKeyOnce("Escape")) gpConfiguring = null;
+      } else {
+        if (inputUp()) configSelectIdx = (configSelectIdx - 1 + configActions.length) % configActions.length;
+        if (inputDown()) configSelectIdx = (configSelectIdx + 1) % configActions.length;
+        if (inputConfirm()) {
+          // 割り当てモード開始
+          gpConfiguring = configActions[configSelectIdx];
+        }
+        if (onKeyOnce("Delete") || onKeyOnce("Backspace")) {
+          // 設定クリア
+          gpConfig[configActions[configSelectIdx]] = null;
+        }
+        if (inputCancel()) { gameState = "title"; titleMenuIdx = 0; }
+      }
       break;
 
     case "modeSelect":
-      if (onKeyOnce("ArrowUp")) modeSelectIdx = (modeSelectIdx - 1 + 3) % 3;
-      if (onKeyOnce("ArrowDown")) modeSelectIdx = (modeSelectIdx + 1) % 3;
-      if (onKeyOnce("Enter")) {
+      if (inputUp()) modeSelectIdx = (modeSelectIdx - 1 + 3) % 3;
+      if (inputDown()) modeSelectIdx = (modeSelectIdx + 1) % 3;
+      if (inputConfirm()) {
         if (modeSelectIdx === 0) { gameMode = "single"; gpResults = []; currentGPCourse = 0; }
         else if (modeSelectIdx === 1) { gameMode = "single"; }
         else { gameMode = "multi"; }
@@ -1467,40 +1531,40 @@ function handleInput() {
         colorSelectMode = false;
         gameState = "carSelect";
       }
-      if (onKeyOnce("Escape")) gameState = "title";
+      if (inputCancel()) gameState = "title";
       break;
 
     case "carSelect": {
       const isSel2P = selectingPlayer === 1;
       if (colorSelectMode) {
-        if (onKeyOnce("ArrowRight")) {
+        if (inputRight()) {
           if (isSel2P) playerColor2 = (playerColor2 + 1) % BODY_COLORS.length;
           else playerColor1 = (playerColor1 + 1) % BODY_COLORS.length;
         }
-        if (onKeyOnce("ArrowLeft")) {
+        if (inputLeft()) {
           if (isSel2P) playerColor2 = (playerColor2 - 1 + BODY_COLORS.length) % BODY_COLORS.length;
           else playerColor1 = (playerColor1 - 1 + BODY_COLORS.length) % BODY_COLORS.length;
         }
-        if (onKeyOnce("Enter") || onKeyOnce("c") || onKeyOnce("C")) colorSelectMode = false;
+        if (inputConfirm() || onKeyOnce("c") || onKeyOnce("C") || gpButtonOnce("special")) colorSelectMode = false;
         break;
       }
-      if (onKeyOnce("c") || onKeyOnce("C")) { colorSelectMode = true; break; }
-      if (onKeyOnce("ArrowRight")) {
+      if (onKeyOnce("c") || onKeyOnce("C") || gpButtonOnce("special")) { colorSelectMode = true; break; }
+      if (inputRight()) {
         if (isSel2P) selectedCar2 = (selectedCar2 + 1) % CAR_DATA.length;
         else selectedCar = (selectedCar + 1) % CAR_DATA.length;
       }
-      if (onKeyOnce("ArrowLeft")) {
+      if (inputLeft()) {
         if (isSel2P) selectedCar2 = (selectedCar2 - 1 + CAR_DATA.length) % CAR_DATA.length;
         else selectedCar = (selectedCar - 1 + CAR_DATA.length) % CAR_DATA.length;
       }
-      if (onKeyOnce("Enter")) {
+      if (inputConfirm()) {
         if (gameMode === "multi" && selectingPlayer === 0) selectingPlayer = 1;
         else {
           if (modeSelectIdx === 0) { selectedCourse = currentGPCourse; initRace(); }
           else gameState = "courseSelect";
         }
       }
-      if (onKeyOnce("Escape")) {
+      if (inputCancel()) {
         if (selectingPlayer === 1) selectingPlayer = 0;
         else gameState = "modeSelect";
       }
@@ -1508,10 +1572,10 @@ function handleInput() {
     }
 
     case "courseSelect":
-      if (onKeyOnce("ArrowRight")) selectedCourse = (selectedCourse + 1) % COURSES.length;
-      if (onKeyOnce("ArrowLeft")) selectedCourse = (selectedCourse - 1 + COURSES.length) % COURSES.length;
-      if (onKeyOnce("Enter")) initRace();
-      if (onKeyOnce("Escape")) gameState = "carSelect";
+      if (inputRight()) selectedCourse = (selectedCourse + 1) % COURSES.length;
+      if (inputLeft()) selectedCourse = (selectedCourse - 1 + COURSES.length) % COURSES.length;
+      if (inputConfirm()) initRace();
+      if (inputCancel()) gameState = "carSelect";
       break;
 
     case "countdown":
@@ -1520,11 +1584,11 @@ function handleInput() {
       break;
 
     case "race":
-      if (onKeyOnce("Escape")) gameState = "result";
+      if (inputCancel()) gameState = "result";
       break;
 
     case "result":
-      if (onKeyOnce("Enter")) {
+      if (inputConfirm()) {
         if (modeSelectIdx === 0) {
           gpResults.push(getRankings());
           currentGPCourse++;
@@ -1532,11 +1596,11 @@ function handleInput() {
           else { selectedCourse = currentGPCourse; initRace(); }
         } else gameState = "title";
       }
-      if (onKeyOnce("Escape")) gameState = "title";
+      if (inputCancel()) gameState = "title";
       break;
 
     case "grandprixResult":
-      if (onKeyOnce("Enter") || onKeyOnce("Escape")) gameState = "title";
+      if (inputConfirm() || inputCancel()) gameState = "title";
       break;
   }
 }
@@ -1548,6 +1612,7 @@ function gameLoop() {
   handleInput();
   switch (gameState) {
     case "title":           drawTitle(); break;
+    case "config":          drawControllerConfig(); break;
     case "modeSelect":      drawModeSelect(); break;
     case "carSelect":       drawCarSelect(); break;
     case "courseSelect":    drawCourseSelect(); break;
