@@ -935,156 +935,285 @@ function drawModeSelect() {
 }
 
 // ========================================
-// マシン選択（レイアウト改善版）
+// マシン選択（モダンFC風レイアウト）
 // ========================================
 let selectingPlayer = 0;
 let colorSelectMode = false;
+let carSelectAnim = 0;
 
 function drawCarSelect() {
-  ctx.fillStyle = FC_BLACK;
+  carSelectAnim++;
+  ctx.fillStyle = "#0a0a12";
   ctx.fillRect(0, 0, W, H);
+
+  // スキャンライン効果（モダンFC風）
+  ctx.fillStyle = "rgba(0,0,0,0.03)";
+  for (let sy = 0; sy < H; sy += 3) {
+    ctx.fillRect(0, sy, W, 1);
+  }
 
   const sel = selectingPlayer === 0 ? selectedCar : selectedCar2;
   const colIdx = selectingPlayer === 0 ? playerColor1 : playerColor2;
-  const plabel = gameMode === "multi" ? `${selectingPlayer + 1}P ` : "";
+  const plabel = gameMode === "multi" ? `${selectingPlayer + 1}P` : "";
 
-  // タイトル
-  fcWindow(150, 15, W - 300, 45, FC_CYAN);
-  fcTextWithShadow(`${plabel}マシン セレクト`, W / 2, 48, FC_CYAN, 24, "center");
+  // ===== ヘッダー =====
+  // グラデーション風のヘッダーバー
+  const headerGrad = ctx.createLinearGradient(0, 0, W, 0);
+  headerGrad.addColorStop(0, "#1a1a2e");
+  headerGrad.addColorStop(0.5, "#16213e");
+  headerGrad.addColorStop(1, "#1a1a2e");
+  ctx.fillStyle = headerGrad;
+  ctx.fillRect(0, 0, W, 60);
 
-  // 左側: サムネイル一覧
-  fcWindow(30, 75, 290, 530, FC_WHITE);
-  fcText("マシン いちらん", 175, 100, FC_WHITE, 14, "center");
+  ctx.strokeStyle = FC_CYAN;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, 60);
+  ctx.lineTo(W, 60);
+  ctx.stroke();
 
-  const thumbCols = 4;
-  const thumbSpacing = 68;
-  const thumbStartX = 42;
-  const thumbStartY = 120;
-  for (let i = 0; i < CAR_DATA.length; i++) {
-    const row = Math.floor(i / thumbCols);
-    const col = i % thumbCols;
-    const tx = thumbStartX + col * thumbSpacing;
-    const ty = thumbStartY + row * 65;
+  if (plabel) {
+    // プレイヤー表示（2P対戦時）
+    ctx.fillStyle = selectingPlayer === 0 ? FC_RED : FC_BLUE;
+    ctx.fillRect(30, 15, 60, 30);
+    fcText(plabel, 60, 38, FC_WHITE, 18, "center");
+  }
 
-    // 選択枠
-    if (i === sel) {
-      ctx.strokeStyle = FC_YELLOW;
-      ctx.lineWidth = 3;
-      ctx.strokeRect(tx - 6, ty - 6, 58, 58);
-      ctx.fillStyle = "rgba(248,216,0,0.15)";
-      ctx.fillRect(tx - 5, ty - 5, 56, 56);
-    }
+  fcTextWithShadow("MACHINE SELECT", W / 2, 42, FC_CYAN, 28, "center");
+  fcText(`No.${String(sel + 1).padStart(2, "0")}`, W - 80, 38, FC_YELLOW, 16, "center");
 
-    const tImg = getColoredCar(i, i === sel ? colIdx : 0);
-    if (tImg) {
-      ctx.imageSmoothingEnabled = false;
-      const tFrameW = tImg.width / 2;
-      // 2倍で表示（間隔を広くとる）
-      ctx.drawImage(tImg, 0, 0, tFrameW, tImg.height, tx, ty, tFrameW * 2, tImg.height * 2);
-      ctx.imageSmoothingEnabled = true;
+  // ===== 中央エリア: 左=マシン表示、右=パラメータ =====
+  const centerY = 80;
+  const centerH = 480;
+
+  // 左側: マシン表示エリア
+  const leftX = 40;
+  const leftW = 520;
+
+  // 背景パネル（角丸風）
+  ctx.fillStyle = "#12121f";
+  ctx.fillRect(leftX, centerY, leftW, centerH);
+  ctx.strokeStyle = "#2a2a4a";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(leftX, centerY, leftW, centerH);
+
+  // マシン名（大きく）
+  const carName = CAR_DATA[sel].name;
+  fcTextWithShadow(carName, leftX + leftW / 2, centerY + 45, FC_YELLOW, 22, "center");
+
+  // マシン画像表示エリア（グリッド背景付き）
+  const imgAreaX = leftX + 60;
+  const imgAreaY = centerY + 70;
+  const imgAreaW = 400;
+  const imgAreaH = 280;
+
+  // グリッド背景
+  ctx.fillStyle = "#0c0c18";
+  ctx.fillRect(imgAreaX, imgAreaY, imgAreaW, imgAreaH);
+
+  // ドットグリッドパターン
+  ctx.fillStyle = "#181828";
+  for (let gx = imgAreaX; gx < imgAreaX + imgAreaW; gx += 16) {
+    for (let gy = imgAreaY; gy < imgAreaY + imgAreaH; gy += 16) {
+      ctx.fillRect(gx, gy, 1, 1);
     }
   }
 
-  // 右側: 選択中のマシン詳細
-  fcWindow(330, 75, 540, 500, FC_YELLOW);
-
-  // マシン名
-  fcTextWithShadow(CAR_DATA[sel].name, 600, 115, FC_YELLOW, 18, "center");
-
-  // 選択中の車（大きく表示）
+  // 選択中のマシン（大きく表示 + アニメーション）
   const img = getColoredCar(sel, colIdx);
   if (img) {
     ctx.imageSmoothingEnabled = false;
     const frameW = img.width / 2;
     const frameH = img.height;
-    const scale = 5;
+    const scale = 8;
     const dw = frameW * scale;
     const dh = frameH * scale;
-    // 背景グリッド
-    ctx.fillStyle = "#181830";
-    ctx.fillRect(450, 135, 300, 200);
-    ctx.strokeStyle = "#303050";
-    ctx.lineWidth = 1;
-    for (let gx = 450; gx <= 750; gx += 20) { ctx.beginPath(); ctx.moveTo(gx, 135); ctx.lineTo(gx, 335); ctx.stroke(); }
-    for (let gy = 135; gy <= 335; gy += 20) { ctx.beginPath(); ctx.moveTo(450, gy); ctx.lineTo(750, gy); ctx.stroke(); }
-    ctx.drawImage(img, 0, 0, frameW, frameH, 600 - dw / 2, 175, dw, dh);
+
+    // フレームアニメーション
+    const animFrame = Math.floor(carSelectAnim / 8) % 2;
+    const sx = animFrame * frameW;
+
+    // 影
+    ctx.globalAlpha = 0.3;
+    ctx.drawImage(img, sx, 0, frameW, frameH,
+      imgAreaX + imgAreaW / 2 - dw / 2 + 8, imgAreaY + imgAreaH / 2 - dh / 2 + 8, dw, dh);
+    ctx.globalAlpha = 1.0;
+
+    // 本体
+    ctx.drawImage(img, sx, 0, frameW, frameH,
+      imgAreaX + imgAreaW / 2 - dw / 2, imgAreaY + imgAreaH / 2 - dh / 2, dw, dh);
     ctx.imageSmoothingEnabled = true;
   }
+
+  // 枠線
+  ctx.strokeStyle = FC_CYAN;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(imgAreaX, imgAreaY, imgAreaW, imgAreaH);
 
   // カラー選択
-  const cc = BODY_COLORS[colIdx];
-  ctx.fillStyle = cc.color;
-  ctx.fillRect(500, 350, 30, 20);
-  ctx.strokeStyle = FC_WHITE;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(500, 350, 30, 20);
-  fcText(`カラー: ${cc.name}`, 540, 366, colorSelectMode ? FC_YELLOW : FC_WHITE, 14);
-  if (colorSelectMode) {
-    fcText("◀ ▶ でへんこう", 600, 390, FC_CYAN, 12, "center");
-  } else {
-    fcText("C: カラーへんこう", 600, 390, FC_DKGRAY, 11, "center");
-  }
+  const colorY = centerY + 370;
+  fcText("BODY COLOR", leftX + leftW / 2, colorY, colorSelectMode ? FC_YELLOW : "#606080", 12, "center");
 
-  // パラメータ
-  fcText("パラメータ", 600, 420, FC_WHITE, 14, "center");
-  const params = [
-    { label: "スピード",   val: CAR_DATA[sel].speed,      col: FC_RED },
-    { label: "かそく",     val: CAR_DATA[sel].accel,      col: FC_ORANGE },
-    { label: "ブレーキ",   val: CAR_DATA[sel].brake,      col: FC_BLUE },
-    { label: "オフロード", val: CAR_DATA[sel].offroad,    col: FC_GREEN },
-    { label: "こうげき",   val: CAR_DATA[sel].attack,     col: "#ff6060" },
-    { label: "たいきゅう", val: CAR_DATA[sel].durability, col: FC_CYAN },
-    { label: "ハンドル",   val: CAR_DATA[sel].handling,   col: FC_YELLOW },
-  ];
-
-  const paramStartY = 440;
-  const paramHeight = 18;
-  params.forEach((p, i) => {
-    const y = paramStartY + i * paramHeight;
-    fcText(p.label, 380, y, FC_WHITE, 11);
-    fcParamBar(490, y - 9, 180, p.val, 10, p.col);
-    fcText(`${p.val}`, 680, y, p.col, 11);
+  const colorBoxW = 28;
+  const colorStartX = leftX + leftW / 2 - (BODY_COLORS.length * colorBoxW) / 2;
+  BODY_COLORS.forEach((bc, i) => {
+    const bx = colorStartX + i * colorBoxW;
+    const by = colorY + 10;
+    ctx.fillStyle = bc.color;
+    ctx.fillRect(bx + 2, by, colorBoxW - 4, 20);
+    if (i === colIdx) {
+      ctx.strokeStyle = FC_YELLOW;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(bx, by - 2, colorBoxW, 24);
+      // 選択中カラー名
+      fcText(bc.name, leftX + leftW / 2, colorY + 50, FC_YELLOW, 14, "center");
+    }
   });
 
-  // ナンバー表示
-  fcText(`No.${String(sel + 1).padStart(2, "0")} / ${CAR_DATA.length}`, 600, 570, FC_DKGRAY, 12, "center");
-
-  // 右下: 隣のマシンプレビュー
-  const prevIdx = (sel - 1 + CAR_DATA.length) % CAR_DATA.length;
-  const nextIdx = (sel + 1) % CAR_DATA.length;
-
-  fcWindow(890, 75, 280, 500, FC_DKGRAY);
-  fcText("となりのマシン", 1030, 100, FC_DKGRAY, 12, "center");
-
-  // 前のマシン
-  fcText("◀ PREV", 1030, 140, "#606060", 10, "center");
-  const prevImg = getColoredCar(prevIdx, 0);
-  if (prevImg) {
-    ctx.imageSmoothingEnabled = false;
-    const fw = prevImg.width / 2;
-    ctx.globalAlpha = 0.6;
-    ctx.drawImage(prevImg, 0, 0, fw, prevImg.height, 990, 155, fw * 2, prevImg.height * 2);
-    ctx.globalAlpha = 1.0;
-    ctx.imageSmoothingEnabled = true;
+  if (colorSelectMode) {
+    fcText("◀ ▶ でへんこう  Enter:かくてい", leftX + leftW / 2, colorY + 75, FC_CYAN, 11, "center");
+  } else {
+    fcText("C: カラーへんこう", leftX + leftW / 2, colorY + 75, "#404060", 10, "center");
   }
-  fcText(CAR_DATA[prevIdx].name, 1030, 235, "#505050", 10, "center");
 
-  // 次のマシン
-  fcText("NEXT ▶", 1030, 320, "#606060", 10, "center");
-  const nextImg = getColoredCar(nextIdx, 0);
-  if (nextImg) {
-    ctx.imageSmoothingEnabled = false;
-    const fw = nextImg.width / 2;
-    ctx.globalAlpha = 0.6;
-    ctx.drawImage(nextImg, 0, 0, fw, nextImg.height, 990, 335, fw * 2, nextImg.height * 2);
-    ctx.globalAlpha = 1.0;
-    ctx.imageSmoothingEnabled = true;
+  // ===== 右側: パラメータ =====
+  const rightX = 580;
+  const rightW = 580;
+
+  ctx.fillStyle = "#12121f";
+  ctx.fillRect(rightX, centerY, rightW, centerH);
+  ctx.strokeStyle = "#2a2a4a";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rightX, centerY, rightW, centerH);
+
+  fcText("PARAMETERS", rightX + rightW / 2, centerY + 30, FC_WHITE, 14, "center");
+
+  // パラメータバー（大きめに見やすく）
+  const params = [
+    { label: "SPEED",    labelJp: "スピード",   val: CAR_DATA[sel].speed,      col: "#ff4060", icon: "▶" },
+    { label: "ACCEL",    labelJp: "かそく",     val: CAR_DATA[sel].accel,      col: "#ff8040", icon: "⬆" },
+    { label: "BRAKE",    labelJp: "ブレーキ",   val: CAR_DATA[sel].brake,      col: "#4080ff", icon: "■" },
+    { label: "OFFROAD",  labelJp: "オフロード", val: CAR_DATA[sel].offroad,    col: "#40c040", icon: "◆" },
+    { label: "ATTACK",   labelJp: "こうげき",   val: CAR_DATA[sel].attack,     col: "#ff6080", icon: "★" },
+    { label: "ARMOR",    labelJp: "たいきゅう", val: CAR_DATA[sel].durability, col: "#40c0c0", icon: "●" },
+    { label: "HANDLING", labelJp: "ハンドル",   val: CAR_DATA[sel].handling,   col: "#c0c040", icon: "◎" },
+  ];
+
+  const paramStartY = centerY + 55;
+  const paramHeight = 58;
+  const barX = rightX + 180;
+  const barW = 300;
+
+  params.forEach((p, i) => {
+    const y = paramStartY + i * paramHeight;
+
+    // アイコンと日本語ラベル
+    fcText(p.icon, rightX + 25, y + 18, p.col, 16);
+    fcText(p.labelJp, rightX + 50, y + 18, "#808090", 13);
+    fcText(p.label, rightX + 50, y + 35, "#404050", 9);
+
+    // バー背景
+    ctx.fillStyle = "#1a1a2a";
+    ctx.fillRect(barX, y + 8, barW, 22);
+
+    // バー本体（グラデーション）
+    const fillW = barW * (p.val / 10);
+    const barGrad = ctx.createLinearGradient(barX, 0, barX + fillW, 0);
+    barGrad.addColorStop(0, p.col);
+    barGrad.addColorStop(1, p.col + "80");
+    ctx.fillStyle = barGrad;
+    ctx.fillRect(barX, y + 8, fillW, 22);
+
+    // バーセグメント（10段階）
+    ctx.strokeStyle = "#0a0a12";
+    ctx.lineWidth = 2;
+    for (let s = 1; s < 10; s++) {
+      const sx = barX + (barW / 10) * s;
+      ctx.beginPath();
+      ctx.moveTo(sx, y + 8);
+      ctx.lineTo(sx, y + 30);
+      ctx.stroke();
+    }
+
+    // 枠
+    ctx.strokeStyle = "#3a3a5a";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, y + 8, barW, 22);
+
+    // 数値
+    fcText(`${p.val}`, barX + barW + 20, y + 25, p.col, 18);
+  });
+
+  // 総合評価（オプション）
+  const totalStats = params.reduce((sum, p) => sum + p.val, 0);
+  const avgRating = (totalStats / params.length).toFixed(1);
+  fcText("TOTAL RATING", rightX + rightW / 2, centerY + paramHeight * 7 + 70, "#606080", 10, "center");
+  fcText(avgRating, rightX + rightW / 2, centerY + paramHeight * 7 + 95, FC_YELLOW, 24, "center");
+
+  // ===== 下部: マシン一覧（2行×13列） =====
+  const listY = 575;
+  const listH = 130;
+
+  // 背景
+  ctx.fillStyle = "#101018";
+  ctx.fillRect(0, listY, W, listH);
+  ctx.strokeStyle = FC_CYAN;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, listY);
+  ctx.lineTo(W, listY);
+  ctx.stroke();
+
+  const thumbCols = 13;
+  const thumbRows = 2;
+  const thumbW = 80;
+  const thumbH = 55;
+  const thumbStartX = (W - thumbCols * thumbW) / 2;
+  const thumbStartY = listY + 10;
+
+  for (let i = 0; i < CAR_DATA.length; i++) {
+    const row = Math.floor(i / thumbCols);
+    const col = i % thumbCols;
+    const tx = thumbStartX + col * thumbW + thumbW / 2;
+    const ty = thumbStartY + row * thumbH;
+
+    const isSelected = i === sel;
+
+    // 選択枠
+    if (isSelected) {
+      // 光るエフェクト
+      const glowAlpha = 0.3 + Math.sin(carSelectAnim * 0.1) * 0.2;
+      ctx.fillStyle = `rgba(248, 216, 0, ${glowAlpha})`;
+      ctx.fillRect(tx - 38, ty - 4, 76, 50);
+
+      ctx.strokeStyle = FC_YELLOW;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(tx - 38, ty - 4, 76, 50);
+    }
+
+    // サムネイル画像
+    const tImg = getColoredCar(i, isSelected ? colIdx : 0);
+    if (tImg) {
+      ctx.imageSmoothingEnabled = false;
+      const tFrameW = tImg.width / 2;
+      const tScale = 1.8;
+      ctx.globalAlpha = isSelected ? 1.0 : 0.6;
+      ctx.drawImage(tImg, 0, 0, tFrameW, tImg.height,
+        tx - (tFrameW * tScale) / 2, ty + 2, tFrameW * tScale, tImg.height * tScale);
+      ctx.globalAlpha = 1.0;
+      ctx.imageSmoothingEnabled = true;
+    }
   }
-  fcText(CAR_DATA[nextIdx].name, 1030, 415, "#505050", 10, "center");
 
-  // 操作説明
-  fcWindow(30, 590, W - 60, 50, FC_DKGRAY);
-  fcText("◀▶:えらぶ  ▲▼:いどう  C:カラー  Enter:けってい  ESC:もどる", W / 2, 622, FC_WHITE, 12, "center");
+  // ===== フッター: 操作説明 =====
+  const footerY = H - 35;
+  ctx.fillStyle = "#0a0a12";
+  ctx.fillRect(0, footerY - 5, W, 40);
+
+  const controls = colorSelectMode
+    ? "◀▶:カラー  Enter:かくてい  ESC:キャンセル"
+    : "◀▶:マシン  ▲▼:れつ  C:カラー  Enter:けってい  ESC:もどる";
+  fcText(controls, W / 2, footerY + 12, "#808090", 12, "center");
 }
 
 // ========================================
@@ -1536,7 +1665,10 @@ function handleInput() {
 
     case "carSelect": {
       const isSel2P = selectingPlayer === 1;
+      const thumbCols = 13; // 2行13列のレイアウト
+
       if (colorSelectMode) {
+        // カラー選択モード
         if (inputRight()) {
           if (isSel2P) playerColor2 = (playerColor2 + 1) % BODY_COLORS.length;
           else playerColor1 = (playerColor1 + 1) % BODY_COLORS.length;
@@ -1548,7 +1680,11 @@ function handleInput() {
         if (inputConfirm() || onKeyOnce("c") || onKeyOnce("C") || gpButtonOnce("special")) colorSelectMode = false;
         break;
       }
+
+      // マシン選択モード
       if (onKeyOnce("c") || onKeyOnce("C") || gpButtonOnce("special")) { colorSelectMode = true; break; }
+
+      // 左右移動（1台ずつ）
       if (inputRight()) {
         if (isSel2P) selectedCar2 = (selectedCar2 + 1) % CAR_DATA.length;
         else selectedCar = (selectedCar + 1) % CAR_DATA.length;
@@ -1557,6 +1693,23 @@ function handleInput() {
         if (isSel2P) selectedCar2 = (selectedCar2 - 1 + CAR_DATA.length) % CAR_DATA.length;
         else selectedCar = (selectedCar - 1 + CAR_DATA.length) % CAR_DATA.length;
       }
+
+      // 上下移動（行移動: 13台ジャンプ）
+      if (inputDown()) {
+        if (isSel2P) {
+          selectedCar2 = (selectedCar2 + thumbCols) % CAR_DATA.length;
+        } else {
+          selectedCar = (selectedCar + thumbCols) % CAR_DATA.length;
+        }
+      }
+      if (inputUp()) {
+        if (isSel2P) {
+          selectedCar2 = (selectedCar2 - thumbCols + CAR_DATA.length) % CAR_DATA.length;
+        } else {
+          selectedCar = (selectedCar - thumbCols + CAR_DATA.length) % CAR_DATA.length;
+        }
+      }
+
       if (inputConfirm()) {
         if (gameMode === "multi" && selectingPlayer === 0) selectingPlayer = 1;
         else {
