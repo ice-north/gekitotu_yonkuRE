@@ -30,16 +30,17 @@ const FC_ORANGE  = "#f87818";
 
 // ボディカラー選択肢（CSS filter hue-rotate方式でCORS回避）
 const BODY_COLORS = [
-  { name: "オレンジ",   filter: "",                                     color: "#f87818" },
-  { name: "レッド",     filter: "hue-rotate(-30deg) saturate(1.5)",     color: "#e03020" },
-  { name: "ブルー",     filter: "hue-rotate(190deg)",                   color: "#2060e0" },
-  { name: "グリーン",   filter: "hue-rotate(90deg)",                    color: "#20b040" },
-  { name: "イエロー",   filter: "hue-rotate(20deg) saturate(1.3)",      color: "#e8c010" },
-  { name: "ホワイト",   filter: "saturate(0) brightness(1.8)",          color: "#e0e0e0" },
-  { name: "パープル",   filter: "hue-rotate(250deg)",                   color: "#9030d0" },
-  { name: "ピンク",     filter: "hue-rotate(300deg) saturate(1.2)",     color: "#e05090" },
-  { name: "シアン",     filter: "hue-rotate(150deg)",                   color: "#00c8c8" },
-  { name: "ブラック",   filter: "saturate(0) brightness(0.3)",          color: "#383838" },
+  // 虹色順（相関色）: 赤→橙→黄→緑→薄緑→シアン→青→紫→薄紫→ピンク
+  { name: "レッド",       filter: "hue-rotate(-30deg) saturate(1.5)",                  color: "#e03020" },
+  { name: "オレンジ",     filter: "",                                                  color: "#f87818" },
+  { name: "イエロー",     filter: "hue-rotate(20deg) saturate(1.3)",                   color: "#e8c010" },
+  { name: "グリーン",     filter: "hue-rotate(90deg)",                                 color: "#20b040" },
+  { name: "ライトグリーン", filter: "hue-rotate(115deg) saturate(1.1) brightness(1.15)", color: "#58f898" },
+  { name: "シアン",       filter: "hue-rotate(150deg)",                                color: "#00c8c8" },
+  { name: "ブルー",       filter: "hue-rotate(190deg)",                                color: "#2060e0" },
+  { name: "パープル",     filter: "hue-rotate(250deg)",                                color: "#9030d0" },
+  { name: "うすむらさき", filter: "hue-rotate(235deg) saturate(0.7) brightness(1.25)",  color: "#a78bfd" },
+  { name: "ピンク",       filter: "hue-rotate(300deg) saturate(1.2)",                  color: "#e05090" },
 ];
 
 let playerColor1 = 0;
@@ -1151,8 +1152,8 @@ function drawCarSelect() {
   fcText(avgRating, rightX + rightW / 2, centerY + paramHeight * 7 + 95, FC_YELLOW, 24, "center");
 
   // ===== 下部: マシン一覧（2行×13列） =====
-  const listY = 575;
-  const listH = 80;
+  const listY = 560;
+  const listH = 140;
 
   // 背景
   ctx.fillStyle = "#101018";
@@ -1165,10 +1166,10 @@ function drawCarSelect() {
   ctx.stroke();
 
   const thumbCols = 13;
-  const thumbW = 44;
-  const thumbH = 30;
+  const thumbW = 58;
+  const thumbH = 60;
   const thumbStartX = (W - thumbCols * thumbW) / 2;
-  const thumbStartY = listY + 8;
+  const thumbStartY = listY + 10;
 
   for (let i = 0; i < CAR_DATA.length; i++) {
     const row = Math.floor(i / thumbCols);
@@ -1182,7 +1183,7 @@ function drawCarSelect() {
     const tImg = getColoredCar(i, isSelected ? colIdx : 0);
     if (tImg) {
       const tFrameW = tImg.width / 2;
-      const tScale = 0.9;
+      const tScale = 1.5;
       const tdw = tFrameW * tScale;
       const tdh = tImg.height * tScale;
 
