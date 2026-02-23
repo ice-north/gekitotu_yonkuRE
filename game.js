@@ -653,7 +653,7 @@ function checkCollisions() {
       if (a.hp <= 0 || b.hp <= 0) continue;
       const dx = b.x - a.x, dy = b.y - a.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      const minDist = 14;
+      const minDist = 22;
       if (dist < minDist && dist > 0) {
         const nx = dx / dist, ny = dy / dist;
         const overlap = minDist - dist;
@@ -703,8 +703,8 @@ function checkCollisions() {
             a.spinVelocity += steerForce;
             b.spinVelocity -= steerForce;
           }
-          // 軽いノックバック
-          const knockForce = totalSpeed * 0.3;
+          // 軽いノックバック（半分に調整）
+          const knockForce = totalSpeed * 0.15;
           a.knockbackX -= nx * knockForce;
           a.knockbackY -= ny * knockForce;
           b.knockbackX += nx * knockForce;
@@ -713,9 +713,9 @@ function checkCollisions() {
           a.speed *= 0.8;
           b.speed *= 0.8;
         } else if (aIsAttacker) {
-          // aが攻撃側: aは50%減速、bはスピン+吹き飛び
+          // aが攻撃側: aは50%減速、bはスピン+吹き飛び（半分に調整）
           a.speed *= 0.5;
-          const knockForce = totalSpeed * 0.8;
+          const knockForce = totalSpeed * 0.4;
           b.knockbackX += nx * knockForce;
           b.knockbackY += ny * knockForce;
           // bをくるくる回転
@@ -723,9 +723,9 @@ function checkCollisions() {
           b.spinVelocity += spinDir * (0.15 + Math.abs(a.speed) * 0.05);
           b.speed *= 0.3;
         } else if (bIsAttacker) {
-          // bが攻撃側: bは50%減速、aはスピン+吹き飛び
+          // bが攻撃側: bは50%減速、aはスピン+吹き飛び（半分に調整）
           b.speed *= 0.5;
-          const knockForce = totalSpeed * 0.8;
+          const knockForce = totalSpeed * 0.4;
           a.knockbackX -= nx * knockForce;
           a.knockbackY -= ny * knockForce;
           // aをくるくる回転
@@ -733,8 +733,8 @@ function checkCollisions() {
           a.spinVelocity += spinDir * (0.15 + Math.abs(b.speed) * 0.05);
           a.speed *= 0.3;
         } else {
-          // 正面衝突など: 両者弾かれる
-          const knockForce = totalSpeed * 0.5;
+          // 正面衝突など: 両者弾かれる（半分に調整）
+          const knockForce = totalSpeed * 0.25;
           a.knockbackX -= nx * knockForce;
           a.knockbackY -= ny * knockForce;
           b.knockbackX += nx * knockForce;
@@ -952,35 +952,35 @@ function drawCarSelect() {
   fcWindow(150, 15, W - 300, 45, FC_CYAN);
   fcTextWithShadow(`${plabel}マシン セレクト`, W / 2, 48, FC_CYAN, 24, "center");
 
-  // 左側: サムネイル一覧（縦スクロール風）
-  fcWindow(30, 75, 280, 500, FC_WHITE);
-  fcText("マシン いちらん", 170, 100, FC_WHITE, 14, "center");
+  // 左側: サムネイル一覧
+  fcWindow(30, 75, 290, 530, FC_WHITE);
+  fcText("マシン いちらん", 175, 100, FC_WHITE, 14, "center");
 
   const thumbCols = 4;
-  const thumbSpacing = 60;
-  const thumbStartX = 55;
-  const thumbStartY = 125;
+  const thumbSpacing = 68;
+  const thumbStartX = 42;
+  const thumbStartY = 120;
   for (let i = 0; i < CAR_DATA.length; i++) {
     const row = Math.floor(i / thumbCols);
     const col = i % thumbCols;
     const tx = thumbStartX + col * thumbSpacing;
-    const ty = thumbStartY + row * 55;
+    const ty = thumbStartY + row * 65;
 
     // 選択枠
     if (i === sel) {
       ctx.strokeStyle = FC_YELLOW;
       ctx.lineWidth = 3;
-      ctx.strokeRect(tx - 6, ty - 6, 52, 50);
+      ctx.strokeRect(tx - 6, ty - 6, 58, 58);
       ctx.fillStyle = "rgba(248,216,0,0.15)";
-      ctx.fillRect(tx - 5, ty - 5, 50, 48);
+      ctx.fillRect(tx - 5, ty - 5, 56, 56);
     }
 
     const tImg = getColoredCar(i, i === sel ? colIdx : 0);
     if (tImg) {
       ctx.imageSmoothingEnabled = false;
       const tFrameW = tImg.width / 2;
-      // 1.5倍で表示
-      ctx.drawImage(tImg, 0, 0, tFrameW, tImg.height, tx, ty, tFrameW * 1.5, tImg.height * 1.5);
+      // 2倍で表示（間隔を広くとる）
+      ctx.drawImage(tImg, 0, 0, tFrameW, tImg.height, tx, ty, tFrameW * 2, tImg.height * 2);
       ctx.imageSmoothingEnabled = true;
     }
   }
