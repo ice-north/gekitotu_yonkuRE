@@ -1008,11 +1008,11 @@ function drawCarSelect() {
   const imgAreaH = 280;
 
   // グリッド背景
-  ctx.fillStyle = "#0c0c18";
+  ctx.fillStyle = "#606060";
   ctx.fillRect(imgAreaX, imgAreaY, imgAreaW, imgAreaH);
 
   // ドットグリッドパターン
-  ctx.fillStyle = "#181828";
+  ctx.fillStyle = "#707070";
   for (let gx = imgAreaX; gx < imgAreaX + imgAreaW; gx += 16) {
     for (let gy = imgAreaY; gy < imgAreaY + imgAreaH; gy += 16) {
       ctx.fillRect(gx, gy, 1, 1);
@@ -1025,7 +1025,7 @@ function drawCarSelect() {
     ctx.imageSmoothingEnabled = false;
     const frameW = img.width / 2;
     const frameH = img.height;
-    const scale = 8;
+    const scale = 4;
     const dw = frameW * scale;
     const dh = frameH * scale;
 
@@ -1152,7 +1152,7 @@ function drawCarSelect() {
 
   // ===== 下部: マシン一覧（2行×13列） =====
   const listY = 575;
-  const listH = 130;
+  const listH = 80;
 
   // 背景
   ctx.fillStyle = "#101018";
@@ -1165,11 +1165,10 @@ function drawCarSelect() {
   ctx.stroke();
 
   const thumbCols = 13;
-  const thumbRows = 2;
-  const thumbW = 80;
-  const thumbH = 55;
+  const thumbW = 44;
+  const thumbH = 30;
   const thumbStartX = (W - thumbCols * thumbW) / 2;
-  const thumbStartY = listY + 10;
+  const thumbStartY = listY + 8;
 
   for (let i = 0; i < CAR_DATA.length; i++) {
     const row = Math.floor(i / thumbCols);
@@ -1179,27 +1178,29 @@ function drawCarSelect() {
 
     const isSelected = i === sel;
 
-    // 選択枠
-    if (isSelected) {
-      // 光るエフェクト
-      const glowAlpha = 0.3 + Math.sin(carSelectAnim * 0.1) * 0.2;
-      ctx.fillStyle = `rgba(248, 216, 0, ${glowAlpha})`;
-      ctx.fillRect(tx - 38, ty - 4, 76, 50);
-
-      ctx.strokeStyle = FC_YELLOW;
-      ctx.lineWidth = 3;
-      ctx.strokeRect(tx - 38, ty - 4, 76, 50);
-    }
-
-    // サムネイル画像
+    // サムネイル画像（先にサイズを決定してカーソルに使う）
     const tImg = getColoredCar(i, isSelected ? colIdx : 0);
     if (tImg) {
-      ctx.imageSmoothingEnabled = false;
       const tFrameW = tImg.width / 2;
-      const tScale = 1.8;
+      const tScale = 0.9;
+      const tdw = tFrameW * tScale;
+      const tdh = tImg.height * tScale;
+
+      // 選択枠（画像サイズに合わせる）
+      if (isSelected) {
+        const pad = 4;
+        const glowAlpha = 0.3 + Math.sin(carSelectAnim * 0.1) * 0.2;
+        ctx.fillStyle = `rgba(248, 216, 0, ${glowAlpha})`;
+        ctx.fillRect(tx - tdw / 2 - pad, ty - pad, tdw + pad * 2, tdh + pad * 2);
+        ctx.strokeStyle = FC_YELLOW;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(tx - tdw / 2 - pad, ty - pad, tdw + pad * 2, tdh + pad * 2);
+      }
+
+      ctx.imageSmoothingEnabled = false;
       ctx.globalAlpha = isSelected ? 1.0 : 0.6;
       ctx.drawImage(tImg, 0, 0, tFrameW, tImg.height,
-        tx - (tFrameW * tScale) / 2, ty + 2, tFrameW * tScale, tImg.height * tScale);
+        tx - tdw / 2, ty, tdw, tdh);
       ctx.globalAlpha = 1.0;
       ctx.imageSmoothingEnabled = true;
     }
