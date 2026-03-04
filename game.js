@@ -463,26 +463,26 @@ function drawCar(c) {
   // HPバーと周回数表示
   if (gameState === "race" || gameState === "countdown") {
     if (c.hp > 0) {
-      // HPバー（横幅2倍）
+      // HPバー（横幅2倍、更に上に配置）
       const barW = 36;
       const barH = 3;
       const hpR = c.hp / MAX_HP;
       ctx.fillStyle = FC_DKGRAY;
-      ctx.fillRect(c.x - barW / 2, c.y - 14, barW, barH);
+      ctx.fillRect(c.x - barW / 2, c.y - 24, barW, barH);
       ctx.fillStyle = hpR > 0.5 ? FC_GREEN : hpR > 0.25 ? FC_YELLOW : FC_RED;
-      ctx.fillRect(c.x - barW / 2, c.y - 14, barW * hpR, barH);
+      ctx.fillRect(c.x - barW / 2, c.y - 24, barW * hpR, barH);
 
-      // 周回数表示（車の上、離して配置）
+      // 周回数表示（更に上に配置）
       const lapDisplay = Math.min(c.lap + 1, TOTAL_LAPS);
       const lapText = `${lapDisplay}`;
       ctx.font = "bold 10px monospace";
       ctx.textAlign = "center";
       // 背景（読みやすさのため）
       ctx.fillStyle = "rgba(0,0,0,0.7)";
-      ctx.fillRect(c.x - 8, c.y - 32, 16, 12);
+      ctx.fillRect(c.x - 8, c.y - 44, 16, 12);
       // 周回数
       ctx.fillStyle = c.isPlayer ? (c.playerId === 0 ? FC_RED : FC_BLUE) : FC_WHITE;
-      ctx.fillText(lapText, c.x, c.y - 22);
+      ctx.fillText(lapText, c.x, c.y - 34);
       ctx.textAlign = "start";
     }
   }
@@ -775,7 +775,8 @@ function applyCollisionDamage(victim, attacker, victimWasAttacker, attackerWasAt
   // 前方からの衝突はダメージ無し（呼び出し側でチェック済み）
   // 攻撃側だった場合はダメージ軽減
   const attackMul = victimWasAttacker ? 0.3 : 1.0;
-  const dmg = Math.max(0.3, attacker.attackPower * 0.4 - victim.durability * 0.15) * attackMul;
+  // 攻撃力アップ: 0.4→0.8、最低ダメージ0.3→0.5
+  const dmg = Math.max(0.5, attacker.attackPower * 0.8 - victim.durability * 0.15) * attackMul;
   const specialBonus = attacker.specialActive ? 2.5 : 1;
   victim.hp = Math.max(0, victim.hp - dmg * specialBonus);
   victim.damageCooldown = COLLISION_COOLDOWN;
