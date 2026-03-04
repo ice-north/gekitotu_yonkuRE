@@ -136,6 +136,68 @@ let cars = [];
 let raceTimer = 0;
 let countdownTimer = 0;
 
+// 衝突エフェクト
+let collisionEffects = [];
+
+function spawnCollisionEffect(x, y, intensity) {
+  // 火花パーティクル
+  for (let i = 0; i < 8; i++) {
+    const angle = (Math.PI * 2 / 8) * i + Math.random() * 0.5;
+    const speed = 2 + Math.random() * 3 * intensity;
+    collisionEffects.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 15 + Math.random() * 10,
+      size: 2 + Math.random() * 3,
+      color: Math.random() > 0.5 ? "#ffff00" : "#ff8800"
+    });
+  }
+  // 衝撃波
+  collisionEffects.push({
+    x, y,
+    vx: 0, vy: 0,
+    life: 12,
+    size: 5,
+    type: "shockwave",
+    color: "#ffffff"
+  });
+}
+
+function updateAndDrawEffects() {
+  for (let i = collisionEffects.length - 1; i >= 0; i--) {
+    const e = collisionEffects[i];
+    e.life--;
+    if (e.life <= 0) {
+      collisionEffects.splice(i, 1);
+      continue;
+    }
+
+    if (e.type === "shockwave") {
+      // 衝撃波（広がる円）
+      const progress = 1 - e.life / 12;
+      const radius = 10 + progress * 30;
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 3 * (1 - progress);
+      ctx.globalAlpha = 1 - progress;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else {
+      // 火花パーティクル
+      e.x += e.vx;
+      e.y += e.vy;
+      e.vx *= 0.9;
+      e.vy *= 0.9;
+      ctx.fillStyle = e.color;
+      ctx.globalAlpha = e.life / 25;
+      ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
 // ========================================
 // キー入力
 // ========================================
@@ -472,17 +534,17 @@ function drawCar(c) {
       ctx.fillStyle = hpR > 0.5 ? FC_GREEN : hpR > 0.25 ? FC_YELLOW : FC_RED;
       ctx.fillRect(c.x - barW / 2, c.y - 24, barW * hpR, barH);
 
-      // 周回数表示（更に上に配置）
+      // 周回数表示
       const lapDisplay = Math.min(c.lap + 1, TOTAL_LAPS);
       const lapText = `${lapDisplay}`;
       ctx.font = "bold 10px monospace";
       ctx.textAlign = "center";
       // 背景（読みやすさのため）
       ctx.fillStyle = "rgba(0,0,0,0.7)";
-      ctx.fillRect(c.x - 8, c.y - 44, 16, 12);
+      ctx.fillRect(c.x - 8, c.y - 40, 16, 12);
       // 周回数
       ctx.fillStyle = c.isPlayer ? (c.playerId === 0 ? FC_RED : FC_BLUE) : FC_WHITE;
-      ctx.fillText(lapText, c.x, c.y - 34);
+      ctx.fillText(lapText, c.x, c.y - 30);
       ctx.textAlign = "start";
     }
   }
@@ -680,6 +742,12 @@ function checkCollisions() {
         b.x += nx * overlap * 0.5;
         b.y += ny * overlap * 0.5;
 
+        // 衝突エフェクト発生
+        const collisionX = (a.x + b.x) / 2;
+        const collisionY = (a.y + b.y) / 2;
+        const intensity = (Math.abs(a.speed) + Math.abs(b.speed)) / 3;
+        spawnCollisionEffect(collisionX, collisionY, Math.min(intensity, 2));
+
         // 衝突角度を計算（各車から見た相手の方向）
         const collisionAngle = Math.atan2(dy, dx);
 
@@ -789,6 +857,7 @@ function initRace() {
   const course = COURSES[selectedCourse];
   coursePoints = getCoursePoints(course, COURSE_RESOLUTION);
   cars = [];
+  collisionEffects = [];
   Object.keys(coloredCarCache).forEach(k => delete coloredCarCache[k]);
 
   const startPt = coursePoints[0], nextPt = coursePoints[1];
@@ -1336,6 +1405,9 @@ function drawRaceUI() {
 
   const rankings = getRankings();
   for (let i = rankings.length - 1; i >= 0; i--) drawCar(rankings[i]);
+
+  // 衝突エフェクト描画
+  updateAndDrawEffects();
 
   // 1P HUD
   const p1 = cars[0];
