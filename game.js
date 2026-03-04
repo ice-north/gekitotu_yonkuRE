@@ -460,9 +460,10 @@ function drawCar(c) {
   }
   ctx.restore();
 
-  // HPバー
+  // HPバーと周回数表示
   if (gameState === "race" || gameState === "countdown") {
     if (c.hp > 0) {
+      // HPバー
       const barW = 18;
       const barH = 2;
       const hpR = c.hp / MAX_HP;
@@ -470,6 +471,19 @@ function drawCar(c) {
       ctx.fillRect(c.x - barW / 2, c.y - 12, barW, barH);
       ctx.fillStyle = hpR > 0.5 ? FC_GREEN : hpR > 0.25 ? FC_YELLOW : FC_RED;
       ctx.fillRect(c.x - barW / 2, c.y - 12, barW * hpR, barH);
+
+      // 周回数表示（車の上）
+      const lapDisplay = Math.min(c.lap + 1, TOTAL_LAPS);
+      const lapText = `${lapDisplay}`;
+      ctx.font = "bold 10px monospace";
+      ctx.textAlign = "center";
+      // 背景（読みやすさのため）
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(c.x - 8, c.y - 24, 16, 10);
+      // 周回数
+      ctx.fillStyle = c.isPlayer ? (c.playerId === 0 ? FC_RED : FC_BLUE) : FC_WHITE;
+      ctx.fillText(lapText, c.x, c.y - 15);
+      ctx.textAlign = "start";
     }
   }
 }
@@ -1112,8 +1126,8 @@ function drawCarSelect() {
     { label: "HANDLING", labelJp: "ハンドル",   val: CAR_DATA[sel].handling,   col: "#c0c040", icon: "◎" },
   ];
 
-  const paramStartY = centerY + 55;
-  const paramHeight = 58;
+  const paramStartY = centerY + 50;
+  const paramHeight = 48;
   const barX = rightX + 180;
   const barW = 300;
 
