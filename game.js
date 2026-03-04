@@ -463,26 +463,26 @@ function drawCar(c) {
   // HPバーと周回数表示
   if (gameState === "race" || gameState === "countdown") {
     if (c.hp > 0) {
-      // HPバー
-      const barW = 18;
-      const barH = 2;
+      // HPバー（横幅2倍）
+      const barW = 36;
+      const barH = 3;
       const hpR = c.hp / MAX_HP;
       ctx.fillStyle = FC_DKGRAY;
-      ctx.fillRect(c.x - barW / 2, c.y - 12, barW, barH);
+      ctx.fillRect(c.x - barW / 2, c.y - 14, barW, barH);
       ctx.fillStyle = hpR > 0.5 ? FC_GREEN : hpR > 0.25 ? FC_YELLOW : FC_RED;
-      ctx.fillRect(c.x - barW / 2, c.y - 12, barW * hpR, barH);
+      ctx.fillRect(c.x - barW / 2, c.y - 14, barW * hpR, barH);
 
-      // 周回数表示（車の上）
+      // 周回数表示（車の上、離して配置）
       const lapDisplay = Math.min(c.lap + 1, TOTAL_LAPS);
       const lapText = `${lapDisplay}`;
       ctx.font = "bold 10px monospace";
       ctx.textAlign = "center";
       // 背景（読みやすさのため）
-      ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.fillRect(c.x - 8, c.y - 24, 16, 10);
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(c.x - 8, c.y - 32, 16, 12);
       // 周回数
       ctx.fillStyle = c.isPlayer ? (c.playerId === 0 ? FC_RED : FC_BLUE) : FC_WHITE;
-      ctx.fillText(lapText, c.x, c.y - 15);
+      ctx.fillText(lapText, c.x, c.y - 22);
       ctx.textAlign = "start";
     }
   }
