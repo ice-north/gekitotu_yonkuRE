@@ -942,9 +942,20 @@ function drawModeSelect() {
 let selectingPlayer = 0;
 let colorSelectMode = false;
 let carSelectAnim = 0;
+let lastSelectedCar = -1;
+let paramAnimProgress = 0;
 
 function drawCarSelect() {
   carSelectAnim++;
+
+  // マシン変更時にパラメーターアニメーションをリセット
+  const currentSel = selectingPlayer === 0 ? selectedCar : selectedCar2;
+  if (currentSel !== lastSelectedCar) {
+    lastSelectedCar = currentSel;
+    paramAnimProgress = 0;
+  }
+  // アニメーション進行（30フレームで完了）
+  if (paramAnimProgress < 30) paramAnimProgress++;
   ctx.fillStyle = "#0a0a12";
   ctx.fillRect(0, 0, W, H);
 
@@ -1109,22 +1120,39 @@ function drawCarSelect() {
   params.forEach((p, i) => {
     const y = paramStartY + i * paramHeight;
 
-    // アイコンと日本語ラベル
+    // アニメーション: 各バーに遅延をつけて順番に伸びる
+    const animDelay = i * 3; // 各バー3フレームずつ遅延
+    const animT = Math.max(0, Math.min(1, (paramAnimProgress - animDelay) / 15));
+    // イージング（ease-out）
+    const easeT = 1 - Math.pow(1 - animT, 3);
+
+    // アイコンと日本語ラベル（フェードイン）
+    ctx.globalAlpha = easeT;
     fcText(p.icon, rightX + 25, y + 18, p.col, 16);
     fcText(p.labelJp, rightX + 50, y + 18, "#808090", 13);
     fcText(p.label, rightX + 50, y + 35, "#404050", 9);
+    ctx.globalAlpha = 1.0;
 
     // バー背景
     ctx.fillStyle = "#1a1a2a";
     ctx.fillRect(barX, y + 8, barW, 22);
 
-    // バー本体（グラデーション）
-    const fillW = barW * (p.val / 10);
-    const barGrad = ctx.createLinearGradient(barX, 0, barX + fillW, 0);
-    barGrad.addColorStop(0, p.col);
-    barGrad.addColorStop(1, p.col + "80");
-    ctx.fillStyle = barGrad;
-    ctx.fillRect(barX, y + 8, fillW, 22);
+    // バー本体（アニメーション付きグラデーション）
+    const targetFillW = barW * (p.val / 10);
+    const fillW = targetFillW * easeT;
+    if (fillW > 0) {
+      const barGrad = ctx.createLinearGradient(barX, 0, barX + fillW, 0);
+      barGrad.addColorStop(0, p.col);
+      barGrad.addColorStop(1, p.col + "80");
+      ctx.fillStyle = barGrad;
+      ctx.fillRect(barX, y + 8, fillW, 22);
+
+      // 伸びる先端にハイライト効果
+      if (easeT < 1) {
+        ctx.fillStyle = "rgba(255,255,255,0.5)";
+        ctx.fillRect(barX + fillW - 4, y + 8, 4, 22);
+      }
+    }
 
     // バーセグメント（10段階）
     ctx.strokeStyle = "#0a0a12";
@@ -1142,8 +1170,9 @@ function drawCarSelect() {
     ctx.lineWidth = 1;
     ctx.strokeRect(barX, y + 8, barW, 22);
 
-    // 数値
-    fcText(`${p.val}`, barX + barW + 20, y + 25, p.col, 18);
+    // 数値（カウントアップアニメーション）
+    const displayVal = Math.round(p.val * easeT);
+    fcText(`${displayVal}`, barX + barW + 20, y + 25, p.col, 18);
   });
 
   // 総合評価（オプション）
@@ -1167,7 +1196,7 @@ function drawCarSelect() {
   ctx.stroke();
 
   const thumbCols = 13;
-  const thumbW = 58;
+  const thumbW = 78;
   const thumbH = 90;
   const thumbStartX = (W - thumbCols * thumbW) / 2;
   const thumbStartY = listY + 10;
