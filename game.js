@@ -730,6 +730,7 @@ function checkCollisions() {
     for (let j = i + 1; j < cars.length; j++) {
       const a = cars[i], b = cars[j];
       if (a.hp <= 0 || b.hp <= 0) continue;
+      if (a.finished || b.finished) continue; // ゴール済みは衝突しない
       const dx = b.x - a.x, dy = b.y - a.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       const minDist = 30;
@@ -1457,18 +1458,26 @@ function drawRankingPanel(rankings) {
     // 順位
     const rankColor = i === 0 ? "#ffd700" : i === 1 ? "#c0c0c0" : i === 2 ? "#cd7f32" : FC_WHITE;
     fcText(`${i + 1}.`, px + 10, y + 12, rankColor, 11, "left");
+
+    // マシンカラー表示（四角）
+    ctx.fillStyle = BODY_COLORS[c.colorIndex].color;
+    ctx.fillRect(px + 28, y + 1, 12, 12);
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px + 28, y + 1, 12, 12);
+
     // プレイヤー表示
     if (c.isPlayer) {
       const plabel = c.playerId === 0 ? "1P" : "2P";
       const pcolor = c.playerId === 0 ? FC_RED : FC_BLUE;
       ctx.fillStyle = pcolor;
-      ctx.fillRect(px + 28, y, 22, 14);
-      fcText(plabel, px + 39, y + 11, FC_WHITE, 9, "center");
+      ctx.fillRect(px + 44, y, 22, 14);
+      fcText(plabel, px + 55, y + 11, FC_WHITE, 9, "center");
+    } else {
+      // CPU表示
+      fcText("CPU", px + 48, y + 12, "#808080", 9, "left");
     }
-    // マシン名（短縮）
-    const nameX = c.isPlayer ? px + 55 : px + 30;
-    const carName = CAR_DATA[c.dataIndex].name.substring(0, 6);
-    fcText(carName, nameX, y + 12, c.finished ? FC_CYAN : FC_WHITE, 10, "left");
+
     // ゴール済み
     if (c.finished) {
       fcText("GOAL", px + pw - 10, y + 12, FC_CYAN, 9, "right");
