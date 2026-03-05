@@ -1560,13 +1560,13 @@ function drawResult() {
       fcText(plabel, 210, y + 26, FC_WHITE, 12, "center");
     }
 
-    // マシン画像（大きく表示）
+    // マシン画像
     const img = getColoredCar(c.dataIndex, c.colorIndex);
     if (img) {
       ctx.imageSmoothingEnabled = false;
       const frameW = img.width / 2;
-      const scale = 2.5;
-      ctx.drawImage(img, 0, 0, frameW, img.height, 250, y + 8, frameW * scale, img.height * scale);
+      const scale = 1.25;
+      ctx.drawImage(img, 0, 0, frameW, img.height, 250, y + 18, frameW * scale, img.height * scale);
       ctx.imageSmoothingEnabled = true;
     }
 
