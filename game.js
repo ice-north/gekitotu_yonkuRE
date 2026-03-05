@@ -488,6 +488,7 @@ function getCarFrame(c) {
 
 function drawCar(c) {
   if (c.hp <= 0 && c.invincible <= -60) return; // 破壊後しばらくで消える
+  if (c.finished) return; // ゴールしたマシンは非表示
   const coloredImg = getColoredCar(c.dataIndex, c.colorIndex);
   ctx.save();
   ctx.translate(c.x, c.y);
@@ -539,11 +540,11 @@ function drawCar(c) {
       const lapText = `${lapDisplay}`;
       ctx.font = "bold 10px monospace";
       ctx.textAlign = "center";
-      // 背景（読みやすさのため）
-      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      // 背景（プレイヤー判別用に色分け）
+      ctx.fillStyle = c.isPlayer ? (c.playerId === 0 ? "rgba(200,48,40,0.9)" : "rgba(0,88,168,0.9)") : "rgba(0,0,0,0.7)";
       ctx.fillRect(c.x - 8, c.y - 40, 16, 12);
-      // 周回数
-      ctx.fillStyle = c.isPlayer ? (c.playerId === 0 ? FC_RED : FC_BLUE) : FC_WHITE;
+      // 周回数（白文字で統一）
+      ctx.fillStyle = FC_WHITE;
       ctx.fillText(lapText, c.x, c.y - 30);
       ctx.textAlign = "start";
     }
@@ -1442,6 +1443,37 @@ function drawRaceUI() {
   }
 
   drawMinimap();
+  drawRankingPanel(rankings);
+}
+
+function drawRankingPanel(rankings) {
+  // 左下に順位パネル表示
+  const px = 5, py = H - 180, pw = 145, ph = 170;
+  fcWindow(px, py, pw, ph, FC_YELLOW);
+  fcText("RANKING", px + pw / 2, py + 18, FC_YELLOW, 12, "center");
+
+  rankings.forEach((c, i) => {
+    const y = py + 28 + i * 20;
+    // 順位
+    const rankColor = i === 0 ? "#ffd700" : i === 1 ? "#c0c0c0" : i === 2 ? "#cd7f32" : FC_WHITE;
+    fcText(`${i + 1}.`, px + 10, y + 12, rankColor, 11, "left");
+    // プレイヤー表示
+    if (c.isPlayer) {
+      const plabel = c.playerId === 0 ? "1P" : "2P";
+      const pcolor = c.playerId === 0 ? FC_RED : FC_BLUE;
+      ctx.fillStyle = pcolor;
+      ctx.fillRect(px + 28, y, 22, 14);
+      fcText(plabel, px + 39, y + 11, FC_WHITE, 9, "center");
+    }
+    // マシン名（短縮）
+    const nameX = c.isPlayer ? px + 55 : px + 30;
+    const carName = CAR_DATA[c.dataIndex].name.substring(0, 6);
+    fcText(carName, nameX, y + 12, c.finished ? FC_CYAN : FC_WHITE, 10, "left");
+    // ゴール済み
+    if (c.finished) {
+      fcText("GOAL", px + pw - 10, y + 12, FC_CYAN, 9, "right");
+    }
+  });
 }
 
 function drawMinimap() {

@@ -10,7 +10,7 @@ const COURSES = [
     bgColor: "#2d5a1e",
     roadColor: "#707070",
     wallColor: "#c03030",
-    roadWidth: 100,
+    roadWidth: 140,
     laps: 5,
     waypoints: [
       { x: 600, y: 160, surface: "road" },
@@ -30,7 +30,7 @@ const COURSES = [
     bgColor: "#2d5a1e",
     roadColor: "#606060",
     wallColor: "#c03030",
-    roadWidth: 90,
+    roadWidth: 130,
     laps: 5,
     waypoints: [
       { x: 600, y: 100, surface: "road" },
@@ -52,7 +52,7 @@ const COURSES = [
     bgColor: "#6b5535",
     roadColor: "#9a7d50",
     wallColor: "#8b6030",
-    roadWidth: 110,
+    roadWidth: 150,
     laps: 5,
     waypoints: [
       { x: 600, y: 130, surface: "offroad" },
@@ -72,7 +72,7 @@ const COURSES = [
     bgColor: "#90b8d0",
     roadColor: "#c0dae8",
     wallColor: "#4080b0",
-    roadWidth: 115,
+    roadWidth: 155,
     laps: 5,
     waypoints: [
       { x: 600, y: 130, surface: "ice" },
@@ -91,7 +91,7 @@ const COURSES = [
     bgColor: "#3a5a2a",
     roadColor: "#686868",
     wallColor: "#c03030",
-    roadWidth: 95,
+    roadWidth: 135,
     laps: 5,
     waypoints: [
       { x: 600, y: 100, surface: "road" },
@@ -112,7 +112,7 @@ const COURSES = [
     bgColor: "#1e3a1e",
     roadColor: "#585858",
     wallColor: "#d02020",
-    roadWidth: 85,
+    roadWidth: 125,
     laps: 5,
     waypoints: [
       { x: 600, y: 90,  surface: "road" },
