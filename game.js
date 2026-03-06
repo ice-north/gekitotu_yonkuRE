@@ -31,17 +31,17 @@ const FC_ORANGE  = "#f87818";
 // ボディカラー選択肢（CSS filter hue-rotate方式でCORS回避）
 const BODY_COLORS = [
   // 虹色順（相関色）: 赤→橙→黄→緑→薄緑→シアン→青→紫→薄紫→ピンク
-  // colorはフィルター適用後の実際の見た目に近い色を設定
-  { name: "レッド",       filter: "hue-rotate(-30deg) saturate(1.5)",                 color: "#d83030" },
+  // ベース画像がオレンジ（約30deg）なので、そこからの相対値で調整
+  { name: "レッド",       filter: "hue-rotate(-45deg) saturate(1.8)",                 color: "#d83030" },
   { name: "オレンジ",     filter: "",                                                 color: "#f87818" },
-  { name: "イエロー",     filter: "hue-rotate(30deg) saturate(1.2)",                  color: "#e8b800" },
-  { name: "グリーン",     filter: "hue-rotate(90deg)",                                color: "#30c048" },
-  { name: "ライトグリーン", filter: "hue-rotate(120deg) saturate(0.9) brightness(1.2)", color: "#40d898" },
-  { name: "シアン",       filter: "hue-rotate(150deg)",                               color: "#20b8c8" },
-  { name: "ブルー",       filter: "hue-rotate(200deg) saturate(1.2)",                 color: "#3070e8" },
-  { name: "パープル",     filter: "hue-rotate(260deg) saturate(1.1)",                 color: "#9040d8" },
-  { name: "うすむらさき", filter: "hue-rotate(240deg) saturate(0.6) brightness(1.3)", color: "#a890f8" },
-  { name: "ピンク",       filter: "hue-rotate(300deg) saturate(1.1)",                 color: "#e860a0" },
+  { name: "イエロー",     filter: "hue-rotate(25deg) saturate(1.3)",                  color: "#e8b800" },
+  { name: "グリーン",     filter: "hue-rotate(85deg) saturate(1.2)",                  color: "#30c048" },
+  { name: "ライトグリーン", filter: "hue-rotate(115deg) saturate(0.9) brightness(1.1)", color: "#40d898" },
+  { name: "シアン",       filter: "hue-rotate(155deg) saturate(1.1)",                 color: "#20b8c8" },
+  { name: "ブルー",       filter: "hue-rotate(195deg) saturate(1.4)",                 color: "#3070e8" },
+  { name: "パープル",     filter: "hue-rotate(255deg) saturate(1.3)",                 color: "#9040d8" },
+  { name: "うすむらさき", filter: "hue-rotate(235deg) saturate(0.7) brightness(1.2)", color: "#a890f8" },
+  { name: "ピンク",       filter: "hue-rotate(295deg) saturate(1.4)",                 color: "#e860a0" },
 ];
 
 let playerColor1 = 0;
@@ -1614,13 +1614,16 @@ function drawGrandPrixResult() {
   fcWindow(200, 20, W - 400, 55, FC_YELLOW);
   fcTextWithShadow("GRAND PRIX RESULT", W / 2, 58, FC_YELLOW, 22, "center");
 
-  const pointTable = [10, 7, 5, 4, 3, 2, 1];
+  // 1位:5pt 2位:3pt 3位:2pt 完走:1pt リタイヤ(HP=0):0pt
+  const pointTable = [5, 3, 2, 1, 1, 1];
   const totals = {};
   gpResults.forEach(raceRanking => {
     raceRanking.forEach((c, rank) => {
       const key = c.dataIndex;
       if (!totals[key]) totals[key] = { dataIndex: c.dataIndex, points: 0, isPlayer: c.isPlayer, playerId: c.playerId, colorIndex: c.colorIndex };
-      totals[key].points += pointTable[rank] || 1;
+      // リタイヤ（HP=0）は0pt、それ以外は順位に応じたポイント
+      const pts = c.hp <= 0 ? 0 : (pointTable[rank] || 1);
+      totals[key].points += pts;
     });
   });
   const sorted = Object.values(totals).sort((a, b) => b.points - a.points);
