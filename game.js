@@ -129,12 +129,17 @@ function createCar(dataIndex, isPlayer, playerId, colorIdx) {
     handleRate:   0.015 + d.handling * 0.005,
     aiTargetWP: 0,
     aiVariance: (Math.random() - 0.5) * 0.3,
+    aiLane: (Math.random() - 0.5) * 1.2,        // 走行ラインの左右オフセット(-0.6..0.6)
+    aiLaneTarget: (Math.random() - 0.5) * 1.2,  // 目標オフセット（徐々に追従）
+    aiLaneTimer: 0,                             // ライン変更までのカウンタ
+    _rank: 0,                                   // 現在順位（ラバーバンド用）
   };
 }
 
 let cars = [];
 let raceTimer = 0;
 let countdownTimer = 0;
+let raceLeaderProg = 0; // 先頭車の進行度（ラバーバンド用）
 
 // 衝突エフェクト
 let collisionEffects = [];
@@ -699,27 +704,81 @@ function updateAICar(c) {
 
   const surf = getSurfaceAt(c.x, c.y);
   let frictionMul = 1, turnMul = 1;
-  if (surf.surface === "grass") { frictionMul = 0.4; turnMul = 0.6; }
+  if (surf.surface === "grass") { frictionMul = 0.4; turnMul = 0.75; }
   else if (surf.surface === "offroad") { frictionMul = 0.5 + c.offroadRate * 0.5; turnMul = 0.8; }
-  else if (surf.surface === "ice") { frictionMul = 1.05; turnMul = 0.4; }
+  else if (surf.surface === "ice") { frictionMul = 0.85; turnMul = 0.72; }
 
-  const target = coursePoints[c.aiTargetWP];
-  const dx = target.x - c.x, dy = target.y - c.y;
+  const rw = COURSES[selectedCourse].roadWidth;
+
+  // 走行ラインを時々変える（バラけて横に広がる）
+  c.aiLaneTimer--;
+  if (c.aiLaneTimer <= 0) {
+    c.aiLaneTarget = (Math.random() - 0.5) * 1.2;
+    c.aiLaneTimer = 120 + Math.random() * 180;
+  }
+
+  // 前方に他車がいたら避ける（追い抜きの挙動）
+  for (const o of cars) {
+    if (o === c || o.finished || o.hp <= 0) continue;
+    const odx = o.x - c.x, ody = o.y - c.y;
+    const od2 = odx * odx + ody * ody;
+    if (od2 < 95 * 95) {
+      const ahead = odx * Math.cos(c.angle) + ody * Math.sin(c.angle);
+      if (ahead > 0) {
+        // 相手が左右どちら側かを外積で判定し、逆側へ寄せて抜く
+        const side = Math.cos(c.angle) * ody - Math.sin(c.angle) * odx;
+        c.aiLaneTarget += (side > 0 ? -0.5 : 0.5);
+      }
+    }
+  }
+  // 芝生に出たら中央ライン（コース中心）へ強制復帰
+  if (surf.surface === "grass") c.aiLaneTarget = 0;
+  c.aiLaneTarget = Math.max(-0.75, Math.min(0.75, c.aiLaneTarget));
+  c.aiLane += (c.aiLaneTarget - c.aiLane) * 0.05;
+
+  // 目標点＝コース中央 ＋ 進行方向に対する横オフセット
+  const N = coursePoints.length;
+  const base = coursePoints[c.aiTargetWP];
+  const ahead = coursePoints[(c.aiTargetWP + 4) % N];
+  const tdir = Math.atan2(ahead.y - base.y, ahead.x - base.x);
+  // 少し先まで見てコーナーのきつさを推定 → 急コーナーはライン中央（アペックス）＆手前で減速
+  const ah2 = coursePoints[(c.aiTargetWP + 7) % N];
+  const pv2 = coursePoints[(c.aiTargetWP - 5 + N) % N];
+  const d2 = Math.atan2(ah2.y - base.y, ah2.x - base.x);
+  const d1 = Math.atan2(base.y - pv2.y, base.x - pv2.x);
+  let curve = Math.abs(d2 - d1);
+  while (curve > Math.PI) curve = Math.abs(curve - Math.PI * 2);
+  const straight = 1 - Math.min(curve / 0.7, 1);
+  const perpX = -Math.sin(tdir), perpY = Math.cos(tdir);
+  const laneDist = c.aiLane * (rw / 2 - 24) * (0.35 + 0.65 * straight);
+  const tx = base.x + perpX * laneDist;
+  const ty = base.y + perpY * laneDist;
+
+  const dx = tx - c.x, dy = ty - c.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
   const targetAngle = Math.atan2(dy, dx);
-  if (dist < 40) c.aiTargetWP = (c.aiTargetWP + 1) % coursePoints.length;
+  if (dist < 44) c.aiTargetWP = (c.aiTargetWP + 1) % coursePoints.length;
 
   let angleDiff = targetAngle - c.angle;
   while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
   while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-  const turnRate = c.handleRate * turnMul * (0.8 + c.aiVariance);
+  const turnRate = c.handleRate * turnMul * (0.95 + c.aiVariance);
   if (angleDiff > 0.05) c.angle += Math.min(turnRate, angleDiff);
   else if (angleDiff < -0.05) c.angle += Math.max(-turnRate, angleDiff);
 
+  // ラバーバンド: 順位＋周回遅れに応じて後方車を加速 → 常に接戦・はぐれ防止
+  const deficit = Math.max(0, raceLeaderProg - (c.lap * 8 + c.checkpoint));
+  const rubber = 1 + Math.min(c._rank, 8) * 0.02 + Math.min(deficit, 12) * 0.02;
   const speedFactor = 1 - Math.min(Math.abs(angleDiff) * 0.5, 0.5);
-  const targetSpeed = c.maxSpeed * frictionMul * speedFactor * (0.85 + c.aiVariance * 0.3);
-  if (c.speed < targetSpeed) c.speed = Math.min(c.speed + c.accelRate * frictionMul * 0.9, targetSpeed);
+  // 急コーナーは手前で減速。低グリップ路面（氷・草）ほど強めに減速して曲がりきる
+  const gripBrake = 0.55 + 0.45 * turnMul;
+  const cornerFactor = (0.5 + 0.5 * straight) * gripBrake + (1 - gripBrake) * straight;
+  const targetSpeed = Math.min(
+    c.maxSpeed * frictionMul * speedFactor * cornerFactor * (0.92 + c.aiVariance * 0.4) * rubber,
+    c.maxSpeed * frictionMul * 1.35
+  );
+  if (c.speed < targetSpeed) c.speed = Math.min(c.speed + c.accelRate * frictionMul, targetSpeed);
   else c.speed = Math.max(c.speed - c.brakeRate * 0.5, targetSpeed * 0.7);
 
   applyCarPhysics(c);
@@ -940,6 +999,11 @@ function updateRace() {
   if (gameMode === "multi" && cars.length > 1 && cars[1].isPlayer) {
     updatePlayerCar(cars[1], "w", "s", "a", "d", "q");
   }
+  // 順位を計算してAIのラバーバンド（追走補正）に使う
+  const ranked = getRankings();
+  ranked.forEach((c, i) => { c._rank = i; });
+  const lead = ranked[0];
+  raceLeaderProg = lead.lap * 8 + lead.checkpoint; // 先頭の進行度（周回遅れ判定用）
   for (const c of cars) { if (!c.isPlayer) updateAICar(c); }
   checkCollisions();
 
