@@ -379,23 +379,20 @@ function buildCourseCache(course) {
   const rw = course.roadWidth;
   const surfaceColors = { road: course.roadColor, offroad: "#9a7d50", ice: "#c0dae8" };
 
-  // コース壁（赤/茶の外側ライン）
-  for (let i = 0; i < pts.length; i++) {
-    const p1 = pts[i], p2 = pts[(i + 1) % pts.length];
-    oc.strokeStyle = course.wallColor || "#c03030";
-    oc.lineWidth = rw + 12;
+  // ラジコンコースの「枠」→ 同心リングで連続バリアを作る（外側から順に塗り重ね）
+  const railColor = course.wallColor || "#e8e8ec";
+  const strokeRing = (width, color) => {
+    oc.strokeStyle = color;
+    oc.lineWidth = width;
     oc.lineCap = "round";
-    oc.beginPath(); oc.moveTo(p1.x, p1.y); oc.lineTo(p2.x, p2.y); oc.stroke();
-  }
-
-  // コース壁の内側に黒い線（溝）
-  for (let i = 0; i < pts.length; i++) {
-    const p1 = pts[i], p2 = pts[(i + 1) % pts.length];
-    oc.strokeStyle = "#181818";
-    oc.lineWidth = rw + 4;
-    oc.lineCap = "round";
-    oc.beginPath(); oc.moveTo(p1.x, p1.y); oc.lineTo(p2.x, p2.y); oc.stroke();
-  }
+    for (let i = 0; i < pts.length; i++) {
+      const p1 = pts[i], p2 = pts[(i + 1) % pts.length];
+      oc.beginPath(); oc.moveTo(p1.x, p1.y); oc.lineTo(p2.x, p2.y); oc.stroke();
+    }
+  };
+  strokeRing(rw + 24, "#18181c");      // 外周の暗い縁取り
+  strokeRing(rw + 18, railColor);      // 連続バリア柵（枠本体）
+  strokeRing(rw + 12, "#101014");      // 柵と路面の間の溝（影）
 
   // コース路面
   for (let i = 0; i < pts.length; i++) {
@@ -404,6 +401,34 @@ function buildCourseCache(course) {
     oc.lineWidth = rw;
     oc.lineCap = "round";
     oc.beginPath(); oc.moveTo(p1.x, p1.y); oc.lineTo(p2.x, p2.y); oc.stroke();
+  }
+
+  // 縁石ストライプ（赤/白の交互ランブルストリップ）→ 路面両端
+  {
+    const edge = rw / 2 - 3;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], nx = pts[(i + 1) % pts.length];
+      const ang = Math.atan2(nx.y - p.y, nx.x - p.x);
+      const perpX = -Math.sin(ang), perpY = Math.cos(ang);
+      oc.fillStyle = (Math.floor(i / 3) % 2) ? "#f0f0f0" : "#d02828";
+      // 外側縁石
+      oc.fillRect(Math.round(p.x + perpX * edge) - 2, Math.round(p.y + perpY * edge) - 2, 4, 5);
+      // 内側縁石
+      oc.fillRect(Math.round(p.x - perpX * edge) - 2, Math.round(p.y - perpY * edge) - 2, 4, 5);
+    }
+  }
+
+  // バリア柵の上側ハイライト（立体感）→ 枠の内エッジに明色ドット
+  {
+    const hl = rw / 2 + 7;
+    for (let i = 0; i < pts.length; i += 2) {
+      const p = pts[i], nx = pts[(i + 1) % pts.length];
+      const ang = Math.atan2(nx.y - p.y, nx.x - p.x);
+      const perpX = -Math.sin(ang), perpY = Math.cos(ang);
+      oc.fillStyle = "rgba(255,255,255,0.35)";
+      oc.fillRect(Math.round(p.x + perpX * hl) - 1, Math.round(p.y + perpY * hl) - 1, 2, 2);
+      oc.fillRect(Math.round(p.x - perpX * hl) - 1, Math.round(p.y - perpY * hl) - 1, 2, 2);
+    }
   }
 
   // 路面にFCドットパターンを重ねる
