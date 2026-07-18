@@ -473,22 +473,22 @@ function buildCourseCache(course) {
     }
   }
 
-  // スタート/ゴールライン（チェッカーフラッグ）
+  // スタート/ゴールライン（チェッカーフラッグ）→ 道路を横切る向き
   const sp = pts[0], sp2 = pts[1];
-  const lineAngle = Math.atan2(sp2.y - sp.y, sp2.x - sp.x) + Math.PI / 2;
+  const lineAngle = Math.atan2(sp2.y - sp.y, sp2.x - sp.x); // 進行方向に沿ってrotate（帯は路幅方向に伸びる）
   const half = rw / 2;
+  oc.save();
+  oc.translate(sp.x, sp.y);
+  oc.rotate(lineAngle);
   for (let s = -half; s < half; s += 8) {
     const row = Math.floor((s + half) / 8);
-    for (let t = -6; t < 6; t += 8) {
-      const col = Math.floor((t + 6) / 8);
+    for (let t = -12; t < 12; t += 8) {
+      const col = Math.floor((t + 12) / 8);
       oc.fillStyle = (row + col) % 2 === 0 ? "#fcfcfc" : "#0f0f0f";
-      oc.save();
-      oc.translate(sp.x, sp.y);
-      oc.rotate(lineAngle);
-      oc.fillRect(t, s, 8, 8);
-      oc.restore();
+      oc.fillRect(t, s, 8, 8); // t=進行方向（帯の厚み）, s=路幅方向（帯の長さ）
     }
   }
+  oc.restore();
 
   courseCache = offCanvas;
 }
