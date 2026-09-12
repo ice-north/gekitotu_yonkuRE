@@ -10,7 +10,7 @@ const H = canvas.height;  // 900
 // 定数
 // ========================================
 const SCALE = 1.0;         // ドット絵拡大率（等倍）
-const TOTAL_LAPS = 5;
+const TOTAL_LAPS = 3;
 const MAX_HP = 100;
 const SPECIAL_COOLDOWN = 300;
 const AI_COUNT = 5;
@@ -634,7 +634,7 @@ function applyCarPhysics(c) {
 
   // 慣性の強さ（氷は慣性大、通常は小）
   let inertia = 0.15; // 通常路面
-  if (surf.surface === "ice") inertia = 0.05;    // 氷はなかなか曲がらない
+  if (surf.surface === "ice") inertia = 0.09;    // 氷は滑るが迷路も曲がれる程度に
   else if (surf.surface === "offroad") inertia = 0.10;
   else if (surf.surface === "grass") inertia = 0.08;
 
@@ -651,6 +651,27 @@ function applyCarPhysics(c) {
 
   c.x += c.vx;
   c.y += c.vy;
+
+  // 枠（フォームバリア）の当たり判定：走行帯の外へ出たら壁で弾く → 迷路として機能
+  {
+    const course = COURSES[selectedCourse];
+    let md = Infinity, bx = c.x, by = c.y;
+    for (let i = 0; i < coursePoints.length; i++) {
+      const p = coursePoints[i];
+      const d = (p.x - c.x) ** 2 + (p.y - c.y) ** 2;
+      if (d < md) { md = d; bx = p.x; by = p.y; }
+    }
+    const dist = Math.sqrt(md);
+    const limit = course.roadWidth / 2 + 8;
+    if (dist > limit && dist > 0.001) {
+      const nx = (c.x - bx) / dist, ny = (c.y - by) / dist; // 壁の外向き法線
+      c.x = bx + nx * limit;                                 // 壁面へ押し戻す
+      c.y = by + ny * limit;
+      const vd = c.vx * nx + c.vy * ny;                      // 壁方向の速度成分
+      if (vd > 0) { c.vx -= nx * vd * 1.2; c.vy -= ny * vd * 1.2; } // 反射（弾く）
+      c.speed *= 0.82;                                       // 衝突で減速
+    }
+  }
 
   // 画面端バウンド
   if (c.x < 10) { c.x = 10; c.vx = Math.abs(c.vx) * 0.5; c.knockbackX = 1; c.spinVelocity += 0.1; }
@@ -673,7 +694,7 @@ function updatePlayerCar(c, upKey, downKey, leftKey, rightKey, specialKey) {
   let frictionMul = 1, turnMul = 1;
   if (surf.surface === "grass")   { frictionMul = 0.4; turnMul = 0.6; }
   else if (surf.surface === "offroad") { frictionMul = 0.5 + c.offroadRate * 0.5; turnMul = 0.8; }
-  else if (surf.surface === "ice")     { frictionMul = 1.05; turnMul = 0.4; }
+  else if (surf.surface === "ice")     { frictionMul = 1.0; turnMul = 0.6; }
 
   // 1Pはゲームパッド入力も受け付ける
   const useGamepad = c.playerId === 0;
@@ -725,7 +746,7 @@ function updateAICar(c) {
   let frictionMul = 1, turnMul = 1;
   if (surf.surface === "grass") { frictionMul = 0.4; turnMul = 0.75; }
   else if (surf.surface === "offroad") { frictionMul = 0.5 + c.offroadRate * 0.5; turnMul = 0.8; }
-  else if (surf.surface === "ice") { frictionMul = 0.85; turnMul = 0.78; }
+  else if (surf.surface === "ice") { frictionMul = 0.85; turnMul = 0.85; }
 
   const rw = COURSES[selectedCourse].roadWidth;
 
@@ -760,14 +781,14 @@ function updateAICar(c) {
   const base = coursePoints[c.aiTargetWP];
   const ahead = coursePoints[(c.aiTargetWP + 4) % N];
   const tdir = Math.atan2(ahead.y - base.y, ahead.x - base.x);
-  // 少し先まで見てコーナーのきつさを推定 → 急コーナーはライン中央（アペックス）＆手前で減速
-  const ah2 = coursePoints[(c.aiTargetWP + 7) % N];
-  const pv2 = coursePoints[(c.aiTargetWP - 5 + N) % N];
+  // 先を広く見てコーナー/ヘアピンのきつさを推定 → 手前で強く減速し曲がりきる
+  const ah2 = coursePoints[(c.aiTargetWP + 10) % N];
+  const pv2 = coursePoints[(c.aiTargetWP - 3 + N) % N];
   const d2 = Math.atan2(ah2.y - base.y, ah2.x - base.x);
   const d1 = Math.atan2(base.y - pv2.y, base.x - pv2.x);
   let curve = Math.abs(d2 - d1);
   while (curve > Math.PI) curve = Math.abs(curve - Math.PI * 2);
-  const straight = 1 - Math.min(curve / 0.7, 1);
+  const straight = 1 - Math.min(curve / 0.6, 1);
   const perpX = -Math.sin(tdir), perpY = Math.cos(tdir);
   const laneDist = c.aiLane * (rw / 2 - 24) * (0.35 + 0.65 * straight);
   const tx = base.x + perpX * laneDist;
@@ -782,7 +803,7 @@ function updateAICar(c) {
   while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
   while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-  const turnRate = c.handleRate * turnMul * (0.95 + c.aiVariance);
+  const turnRate = c.handleRate * turnMul * (1.15 + c.aiVariance);
   if (angleDiff > 0.05) c.angle += Math.min(turnRate, angleDiff);
   else if (angleDiff < -0.05) c.angle += Math.max(-turnRate, angleDiff);
 
@@ -790,9 +811,9 @@ function updateAICar(c) {
   const deficit = Math.max(0, raceLeaderProg - (c.lap * 8 + c.checkpoint));
   const rubber = 1 + Math.min(c._rank, 8) * 0.02 + Math.min(deficit, 12) * 0.02;
   const speedFactor = 1 - Math.min(Math.abs(angleDiff) * 0.5, 0.5);
-  // 急コーナーは手前で減速。低グリップ路面（氷・草）ほど強めに減速して曲がりきる
+  // 急コーナー/ヘアピンは手前で強めに減速。低グリップ路面ほど深く減速
   const gripBrake = 0.55 + 0.45 * turnMul;
-  const cornerFactor = (0.5 + 0.5 * straight) * gripBrake + (1 - gripBrake) * straight;
+  const cornerFactor = (0.3 + 0.7 * straight) * gripBrake + (1 - gripBrake) * straight;
   const targetSpeed = Math.min(
     c.maxSpeed * frictionMul * speedFactor * cornerFactor * (0.92 + c.aiVariance * 0.4) * rubber,
     c.maxSpeed * frictionMul * 1.35

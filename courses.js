@@ -1,144 +1,104 @@
-// courses.js - コース定義（6ステージ）
+// courses.js - コース定義（6ステージ / ラジコン迷路スタイル）
 // 画面サイズ: 1200x900
 // surfaceType: "road"(舗装), "offroad"(未舗装), "ice"(氷)
+
+// 迷路（コーム型の蛇行）を生成する。
+// マット全体を隙間なく走行帯で埋め、隣り合う帯は1枚の枠（壁）で仕切る。
+//  box: 中心線が通る範囲 / cols: 縦帯の本数(偶数) / flipV: 上下反転 / surfaceFn: 面種を返す関数
+function combWaypoints(box, cols, flipV, surfaceFn) {
+  const { x0, y0, x1, y1 } = box;
+  const sp = (x1 - x0) / (cols - 1);
+  const yTop = y0, yBot = y1, yTop2 = y0 + sp; // フィンガーの上端（枠が上帯と重なる位置）
+  const xs = [];
+  for (let i = 0; i < cols; i++) xs.push(x0 + sp * i);
+  const raw = [];
+  raw.push([xs[0], yTop]);
+  raw.push([xs[cols - 1], yTop]);       // 上帯（左→右）
+  raw.push([xs[cols - 1], yBot]);       // 右端を下る
+  let atTop = false;
+  for (let i = cols - 2; i >= 1; i--) { // 内側フィンガーを右から左へ
+    raw.push([xs[i], atTop ? yTop2 : yBot]);
+    atTop = !atTop;
+    raw.push([xs[i], atTop ? yTop2 : yBot]);
+  }
+  raw.push([xs[0], atTop ? yTop2 : yBot]);
+  raw.push([xs[0], yTop]);              // 左端を上って閉じる
+  return raw.map(([x, y]) => {
+    const yy = flipV ? (y0 + y1 - y) : y;
+    return { x, y: yy, surface: surfaceFn ? surfaceFn(x, yy) : "road" };
+  });
+}
+
+const MAZE_BOX = { x0: 170, y0: 165, x1: 1030, y1: 780 };
 
 const COURSES = [
   {
     id: 0,
-    name: "PANEL SPEEDWAY",
-    description: "広いマットの基本コース。初心者向け。",
+    name: "PANEL MAZE",
+    description: "枠で仕切られた基本の迷路コース。初心者向け。",
     bgColor: "#2b2b31",
     roadColor: "#5c5c66",
     wallColor: "#c03030",
-    roadWidth: 130,
+    roadWidth: 140,
     laps: 5,
-    waypoints: [
-      { x: 300, y: 185, surface: "road" },
-      { x: 900, y: 185, surface: "road" },
-      { x: 1045, y: 330, surface: "road" },
-      { x: 1045, y: 570, surface: "road" },
-      { x: 900, y: 715, surface: "road" },
-      { x: 300, y: 715, surface: "road" },
-      { x: 155, y: 570, surface: "road" },
-      { x: 155, y: 330, surface: "road" },
-    ],
+    waypoints: combWaypoints(MAZE_BOX, 6, false, () => "road"),
   },
   {
     id: 1,
-    name: "SERPENTINE GP",
-    description: "枠が中央に切れ込む蛇行コース。折り返しが勝負。",
+    name: "SNAKE MAZE",
+    description: "上から枠が切れ込む蛇行迷路。折り返し勝負。",
     bgColor: "#2b2b31",
     roadColor: "#56565f",
     wallColor: "#c03030",
-    roadWidth: 115,
+    roadWidth: 140,
     laps: 5,
-    waypoints: [
-      { x: 250, y: 180, surface: "road" },
-      { x: 950, y: 180, surface: "road" },
-      { x: 1050, y: 330, surface: "road" },
-      { x: 1050, y: 600, surface: "road" },
-      { x: 900, y: 730, surface: "road" },
-      { x: 575, y: 730, surface: "road" },
-      { x: 575, y: 470, surface: "road" },
-      { x: 430, y: 430, surface: "road" },
-      { x: 320, y: 470, surface: "road" },
-      { x: 320, y: 730, surface: "road" },
-      { x: 150, y: 600, surface: "road" },
-      { x: 150, y: 330, surface: "road" },
-    ],
+    waypoints: combWaypoints(MAZE_BOX, 6, true, () => "road"),
   },
   {
     id: 2,
-    name: "DIRT SNAKE",
-    description: "全面オフロードのうねうねコース。グリップ低め。",
+    name: "DIRT MAZE",
+    description: "全面オフロードの迷路。グリップ低め。",
     bgColor: "#52422c",
     roadColor: "#9a7d50",
     wallColor: "#8b6030",
-    roadWidth: 120,
+    roadWidth: 140,
     laps: 5,
-    waypoints: [
-      { x: 250, y: 195, surface: "offroad" },
-      { x: 520, y: 155, surface: "offroad" },
-      { x: 780, y: 195, surface: "offroad" },
-      { x: 970, y: 215, surface: "offroad" },
-      { x: 1055, y: 400, surface: "offroad" },
-      { x: 1000, y: 560, surface: "offroad" },
-      { x: 1055, y: 710, surface: "offroad" },
-      { x: 830, y: 745, surface: "offroad" },
-      { x: 540, y: 720, surface: "offroad" },
-      { x: 290, y: 748, surface: "offroad" },
-      { x: 150, y: 560, surface: "offroad" },
-      { x: 200, y: 370, surface: "offroad" },
-    ],
+    waypoints: combWaypoints(MAZE_BOX, 6, false, () => "offroad"),
   },
   {
     id: 3,
-    name: "ICE OVAL",
-    description: "つるつるの氷マット。広い楕円でも滑る！",
+    name: "ICE MAZE",
+    description: "つるつる氷の迷路。壁に激突注意！",
     bgColor: "#7ba0bd",
     roadColor: "#d4e8f2",
     wallColor: "#4080b0",
     roadWidth: 150,
     laps: 5,
-    waypoints: [
-      { x: 350, y: 200, surface: "ice" },
-      { x: 850, y: 200, surface: "ice" },
-      { x: 1035, y: 350, surface: "ice" },
-      { x: 1035, y: 550, surface: "ice" },
-      { x: 850, y: 700, surface: "ice" },
-      { x: 350, y: 700, surface: "ice" },
-      { x: 165, y: 550, surface: "ice" },
-      { x: 165, y: 350, surface: "ice" },
-    ],
+    waypoints: combWaypoints(MAZE_BOX, 6, true, () => "ice"),
   },
   {
     id: 4,
-    name: "MIX SERPENTINE",
-    description: "舗装・ダート・氷が混在する蛇行コース。",
+    name: "MIX MAZE",
+    description: "舗装・ダート・氷が混在する迷路。",
     bgColor: "#2f2f36",
     roadColor: "#63636c",
     wallColor: "#c03030",
-    roadWidth: 120,
+    roadWidth: 140,
     laps: 5,
-    waypoints: [
-      { x: 250, y: 180, surface: "road" },
-      { x: 950, y: 180, surface: "road" },
-      { x: 1050, y: 330, surface: "ice" },
-      { x: 1050, y: 600, surface: "ice" },
-      { x: 900, y: 730, surface: "offroad" },
-      { x: 575, y: 730, surface: "offroad" },
-      { x: 575, y: 470, surface: "road" },
-      { x: 430, y: 430, surface: "road" },
-      { x: 320, y: 470, surface: "offroad" },
-      { x: 320, y: 730, surface: "offroad" },
-      { x: 150, y: 600, surface: "ice" },
-      { x: 150, y: 330, surface: "road" },
-    ],
+    waypoints: combWaypoints(MAZE_BOX, 6, false, (x) =>
+      x < 460 ? "offroad" : x > 740 ? "ice" : "road"),
   },
   {
     id: 5,
-    name: "FINAL SERPENTINE",
-    description: "全要素が詰まった最終決戦の蛇行コース！",
+    name: "FINAL MAZE",
+    description: "枠が密集する最終決戦の大迷路！",
     bgColor: "#26262b",
     roadColor: "#55555f",
     wallColor: "#d02020",
-    roadWidth: 120,
+    roadWidth: 110,
     laps: 5,
-    waypoints: [
-      { x: 230, y: 175, surface: "road" },
-      { x: 560, y: 155, surface: "road" },
-      { x: 880, y: 180, surface: "ice" },
-      { x: 1055, y: 330, surface: "ice" },
-      { x: 1055, y: 600, surface: "road" },
-      { x: 910, y: 745, surface: "offroad" },
-      { x: 600, y: 745, surface: "offroad" },
-      { x: 600, y: 460, surface: "road" },
-      { x: 450, y: 420, surface: "ice" },
-      { x: 330, y: 460, surface: "ice" },
-      { x: 330, y: 745, surface: "offroad" },
-      { x: 155, y: 600, surface: "road" },
-      { x: 155, y: 340, surface: "road" },
-    ],
+    waypoints: combWaypoints(MAZE_BOX, 6, false, (x, y) =>
+      y < 360 ? "ice" : x < 450 ? "offroad" : "road"),
   },
 ];
 
