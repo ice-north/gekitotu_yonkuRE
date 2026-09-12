@@ -4,11 +4,11 @@
 
 // 迷路（コーム型の蛇行）を生成する。
 // マット全体を隙間なく走行帯で埋め、隣り合う帯は1枚の枠（壁）で仕切る。
-//  box: 中心線が通る範囲 / cols: 縦帯の本数(偶数) / flipV: 上下反転 / surfaceFn: 面種を返す関数
-function combWaypoints(box, cols, flipV, surfaceFn) {
+// rawComb: 縦フィンガーのコーム経路を [x,y] 配列で返す（cols は偶数）
+function rawComb(box, cols) {
   const { x0, y0, x1, y1 } = box;
   const sp = (x1 - x0) / (cols - 1);
-  const yTop = y0, yBot = y1, yTop2 = y0 + sp; // フィンガーの上端（枠が上帯と重なる位置）
+  const yTop = y0, yBot = y1, yTop2 = y0 + sp;
   const xs = [];
   for (let i = 0; i < cols; i++) xs.push(x0 + sp * i);
   const raw = [];
@@ -23,9 +23,24 @@ function combWaypoints(box, cols, flipV, surfaceFn) {
   }
   raw.push([xs[0], atTop ? yTop2 : yBot]);
   raw.push([xs[0], yTop]);              // 左端を上って閉じる
-  return raw.map(([x, y]) => {
-    const yy = flipV ? (y0 + y1 - y) : y;
-    return { x, y: yy, surface: surfaceFn ? surfaceFn(x, yy) : "road" };
+  return raw;
+}
+
+// 縦型コーム（縦帯の迷路）
+function combV(box, cols, flip, sf) {
+  return rawComb(box, cols).map(([x, y]) => {
+    const Y = flip ? (box.y0 + box.y1 - y) : y;
+    return { x, y: Y, surface: sf ? sf(x, Y) : "road" };
+  });
+}
+
+// 横型コーム（横帯の迷路＝縦型をXY入れ替え）
+function combH(box, rows, flip, sf) {
+  const V = { x0: box.y0, y0: box.x0, x1: box.y1, y1: box.x1 };
+  return rawComb(V, rows).map(([vx, vy]) => {
+    let X = vy; const Y = vx;
+    if (flip) X = box.x0 + box.x1 - X;
+    return { x: X, y: Y, surface: sf ? sf(X, Y) : "road" };
   });
 }
 
@@ -41,64 +56,64 @@ const COURSES = [
     wallColor: "#c03030",
     roadWidth: 140,
     laps: 5,
-    waypoints: combWaypoints(MAZE_BOX, 6, false, () => "road"),
+    waypoints: combV(MAZE_BOX, 6, false, () => "road"),
   },
   {
     id: 1,
     name: "SNAKE MAZE",
-    description: "上から枠が切れ込む蛇行迷路。折り返し勝負。",
+    description: "横帯が積み重なる蛇行迷路。折り返し勝負。",
     bgColor: "#2b2b31",
     roadColor: "#56565f",
     wallColor: "#c03030",
-    roadWidth: 140,
+    roadWidth: 100,
     laps: 5,
-    waypoints: combWaypoints(MAZE_BOX, 6, true, () => "road"),
+    waypoints: combH(MAZE_BOX, 6, false, () => "road"),
   },
   {
     id: 2,
     name: "DIRT MAZE",
-    description: "全面オフロードの迷路。グリップ低め。",
+    description: "縦枠が密集するオフロード大迷路。グリップ低め。",
     bgColor: "#52422c",
     roadColor: "#9a7d50",
     wallColor: "#8b6030",
-    roadWidth: 140,
+    roadWidth: 130,
     laps: 5,
-    waypoints: combWaypoints(MAZE_BOX, 6, false, () => "offroad"),
+    waypoints: combV(MAZE_BOX, 6, true, () => "offroad"),
   },
   {
     id: 3,
     name: "ICE MAZE",
-    description: "つるつる氷の迷路。壁に激突注意！",
+    description: "幅広の横帯がつるつる滑る氷の迷路。壁に激突注意！",
     bgColor: "#7ba0bd",
     roadColor: "#d4e8f2",
     wallColor: "#4080b0",
-    roadWidth: 150,
+    roadWidth: 160,
     laps: 5,
-    waypoints: combWaypoints(MAZE_BOX, 6, true, () => "ice"),
+    waypoints: combH(MAZE_BOX, 4, false, () => "ice"),
   },
   {
     id: 4,
     name: "MIX MAZE",
-    description: "舗装・ダート・氷が混在する迷路。",
+    description: "舗装・ダート・氷が縦帯で混在する迷路。",
     bgColor: "#2f2f36",
     roadColor: "#63636c",
     wallColor: "#c03030",
-    roadWidth: 140,
+    roadWidth: 105,
     laps: 5,
-    waypoints: combWaypoints(MAZE_BOX, 6, false, (x) =>
+    waypoints: combV(MAZE_BOX, 8, false, (x) =>
       x < 460 ? "offroad" : x > 740 ? "ice" : "road"),
   },
   {
     id: 5,
     name: "FINAL MAZE",
-    description: "枠が密集する最終決戦の大迷路！",
+    description: "横帯に全要素が詰まった最終決戦の大迷路！",
     bgColor: "#26262b",
     roadColor: "#55555f",
     wallColor: "#d02020",
-    roadWidth: 110,
+    roadWidth: 100,
     laps: 5,
-    waypoints: combWaypoints(MAZE_BOX, 6, false, (x, y) =>
-      y < 360 ? "ice" : x < 450 ? "offroad" : "road"),
+    waypoints: combH(MAZE_BOX, 6, true, (x, y) =>
+      y < 370 ? "ice" : y > 590 ? "offroad" : "road"),
   },
 ];
 
