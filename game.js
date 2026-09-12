@@ -986,21 +986,29 @@ function initRace() {
   collisionEffects = [];
   Object.keys(coloredCarCache).forEach(k => delete coloredCarCache[k]);
 
-  const startPt = coursePoints[0], nextPt = coursePoints[1];
-  const startAngle = Math.atan2(nextPt.y - startPt.y, nextPt.x - startPt.x);
-  const perpAngle = startAngle + Math.PI / 2;
+  // スタート後方グリッド：コース経路に沿って車を並べる（迷路でも必ずコース内から開始）
+  const L = coursePoints.length;
+  const rwHalf = course.roadWidth / 2;
+  const gridPos = (order) => {
+    const back = 3 + order * 3;                       // スタート線から手前へ何点戻すか
+    const idx = ((-back) % L + L) % L;
+    const p = coursePoints[idx];
+    const nxt = coursePoints[(idx + 1) % L];
+    const ang = Math.atan2(nxt.y - p.y, nxt.x - p.x);
+    const lat = ((order % 2) ? 1 : -1) * rwHalf * 0.4; // 左右に少しずらして隊列に
+    return { x: p.x - Math.sin(ang) * lat, y: p.y + Math.cos(ang) * lat, angle: ang, idx };
+  };
 
   const p1 = createCar(selectedCar, true, 0, playerColor1);
-  p1.x = startPt.x - Math.cos(startAngle) * 30;
-  p1.y = startPt.y - Math.sin(startAngle) * 30;
-  p1.angle = startAngle;
+  const g1 = gridPos(0);
+  p1.x = g1.x; p1.y = g1.y; p1.angle = g1.angle;
   cars.push(p1);
 
+  let orderN = 1;
   if (gameMode === "multi") {
     const p2 = createCar(selectedCar2, true, 1, playerColor2);
-    p2.x = startPt.x - Math.cos(startAngle) * 30 + Math.cos(perpAngle) * 30;
-    p2.y = startPt.y - Math.sin(startAngle) * 30 + Math.sin(perpAngle) * 30;
-    p2.angle = startAngle;
+    const g2 = gridPos(orderN++);
+    p2.x = g2.x; p2.y = g2.y; p2.angle = g2.angle;
     cars.push(p2);
   }
 
@@ -1012,13 +1020,9 @@ function initRace() {
     usedIndices.push(aiIndex);
     const aiColor = Math.floor(Math.random() * BODY_COLORS.length);
     const ai = createCar(aiIndex, false, -1, aiColor);
-    const row = Math.floor((i + (gameMode === "multi" ? 2 : 1)) / 3);
-    const col = (i + (gameMode === "multi" ? 2 : 1)) % 3;
-    // スタート間隔を広げる
-    ai.x = startPt.x - Math.cos(startAngle) * (60 + row * 45) + Math.cos(perpAngle) * (col - 1) * 30;
-    ai.y = startPt.y - Math.sin(startAngle) * (60 + row * 45) + Math.sin(perpAngle) * (col - 1) * 30;
-    ai.angle = startAngle;
-    ai.aiTargetWP = 2;
+    const g = gridPos(orderN++);
+    ai.x = g.x; ai.y = g.y; ai.angle = g.angle;
+    ai.aiTargetWP = (g.idx + 2) % L;
     cars.push(ai);
   }
 
