@@ -360,25 +360,52 @@ function buildCourseCache(course) {
   offCanvas.height = H;
   const oc = offCanvas.getContext("2d");
 
-  // 背景を8x8タイルパターンで塗る（FC風）
-  const bgBase = course.bgColor;
-  oc.fillStyle = bgBase;
+  // === ラジコン走行会場の床（広間）を描く ===
+  // 木のフローリング（部屋の床）
+  oc.fillStyle = "#caa878";
   oc.fillRect(0, 0, W, H);
+  oc.fillStyle = "rgba(110,78,42,0.20)";
+  for (let py = 0; py < H; py += 60) oc.fillRect(0, py, W, 2);        // 板の横目地
+  oc.fillStyle = "rgba(150,112,64,0.26)";
+  for (let px = 0; px < W; px += 150) oc.fillRect(px, 0, 2, H);       // 板の縦継ぎ目
 
-  // 背景に草・土のドットパターン
-  const bgR = parseInt(bgBase.slice(1, 3), 16);
-  const bgG = parseInt(bgBase.slice(3, 5), 16);
-  const bgB = parseInt(bgBase.slice(5, 7), 16);
-  for (let ty = 0; ty < H; ty += 8) {
-    for (let tx = 0; tx < W; tx += 8) {
-      const hash = ((tx * 73 + ty * 137) >>> 0) % 16;
-      if (hash < 3) {
-        const dr = hash === 0 ? 12 : -8;
+  // フェルトマット（広間＝走行会場）: 角丸長方形
+  const matColor = course.bgColor;
+  const mX = 34, mY = 34, mW = W - 68, mH = H - 68, mR = 64;
+  const roundRect = (x, y, w, h, r) => {
+    oc.beginPath();
+    oc.moveTo(x + r, y);
+    oc.arcTo(x + w, y, x + w, y + h, r);
+    oc.arcTo(x + w, y + h, x, y + h, r);
+    oc.arcTo(x, y + h, x, y, r);
+    oc.arcTo(x, y, x + w, y, r);
+    oc.closePath();
+  };
+  // マットの落ち影
+  oc.fillStyle = "rgba(0,0,0,0.28)";
+  roundRect(mX + 6, mY + 9, mW, mH, mR); oc.fill();
+  // マット本体
+  roundRect(mX, mY, mW, mH, mR);
+  oc.fillStyle = matColor; oc.fill();
+  // マット表面のフェルト風ノイズ（マット内だけ）
+  const bgR = parseInt(matColor.slice(1, 3), 16);
+  const bgG = parseInt(matColor.slice(3, 5), 16);
+  const bgB = parseInt(matColor.slice(5, 7), 16);
+  oc.save(); roundRect(mX, mY, mW, mH, mR); oc.clip();
+  for (let ty = mY; ty < mY + mH; ty += 6) {
+    for (let tx = mX; tx < mX + mW; tx += 6) {
+      const hash = ((tx * 73 + ty * 137) >>> 0) % 12;
+      if (hash < 4) {
+        const dr = hash === 0 ? 10 : -7;
         oc.fillStyle = `rgb(${Math.max(0, Math.min(255, bgR + dr))},${Math.max(0, Math.min(255, bgG + dr))},${Math.max(0, Math.min(255, bgB + dr))})`;
-        oc.fillRect(tx, ty, 4, 4);
+        oc.fillRect(tx, ty, 3, 3);
       }
     }
   }
+  oc.restore();
+  // マットの縁取り
+  roundRect(mX, mY, mW, mH, mR);
+  oc.strokeStyle = "rgba(0,0,0,0.35)"; oc.lineWidth = 3; oc.stroke();
 
   const pts = coursePoints;
   const rw = course.roadWidth;
@@ -395,9 +422,11 @@ function buildCourseCache(course) {
       oc.beginPath(); oc.moveTo(p1.x, p1.y); oc.lineTo(p2.x, p2.y); oc.stroke();
     }
   };
-  strokeRing(rw + 24, "#18181c");      // 外周の暗い縁取り
-  strokeRing(rw + 18, railColor);      // 連続バリア柵（枠本体）
-  strokeRing(rw + 12, "#101014");      // 柵と路面の間の溝（影）
+  // フォームバリア（枠）の土台: 床への落ち影 → 白フォームチューブ → 路面との溝
+  strokeRing(rw + 44, "rgba(0,0,0,0.26)"); // 床への落ち影
+  strokeRing(rw + 36, "#f6f6f8");          // 白いフォームチューブ（外）
+  strokeRing(rw + 30, "#e2e2e8");          // フォームの陰影（内側）
+  strokeRing(rw + 18, "#33333a");          // チューブと路面の間の溝（影）
 
   // コース路面
   for (let i = 0; i < pts.length; i++) {
@@ -408,31 +437,21 @@ function buildCourseCache(course) {
     oc.beginPath(); oc.moveTo(p1.x, p1.y); oc.lineTo(p2.x, p2.y); oc.stroke();
   }
 
-  // 縁石ストライプ（赤/白の交互ランブルストリップ）→ 路面両端
+  // フォームバリアの赤ストライプ（一定間隔で白チューブを横断）→ ラジコン枠の目印
   {
-    const edge = rw / 2 - 3;
-    for (let i = 0; i < pts.length; i++) {
+    const tubeR = rw / 2 + 13;
+    for (let i = 0; i < pts.length; i += 5) {
       const p = pts[i], nx = pts[(i + 1) % pts.length];
       const ang = Math.atan2(nx.y - p.y, nx.x - p.x);
       const perpX = -Math.sin(ang), perpY = Math.cos(ang);
-      oc.fillStyle = (Math.floor(i / 3) % 2) ? "#f0f0f0" : "#d02828";
-      // 外側縁石
-      oc.fillRect(Math.round(p.x + perpX * edge) - 2, Math.round(p.y + perpY * edge) - 2, 4, 5);
-      // 内側縁石
-      oc.fillRect(Math.round(p.x - perpX * edge) - 2, Math.round(p.y - perpY * edge) - 2, 4, 5);
-    }
-  }
-
-  // バリア柵の上側ハイライト（立体感）→ 枠の内エッジに明色ドット
-  {
-    const hl = rw / 2 + 7;
-    for (let i = 0; i < pts.length; i += 2) {
-      const p = pts[i], nx = pts[(i + 1) % pts.length];
-      const ang = Math.atan2(nx.y - p.y, nx.x - p.x);
-      const perpX = -Math.sin(ang), perpY = Math.cos(ang);
-      oc.fillStyle = "rgba(255,255,255,0.35)";
-      oc.fillRect(Math.round(p.x + perpX * hl) - 1, Math.round(p.y + perpY * hl) - 1, 2, 2);
-      oc.fillRect(Math.round(p.x - perpX * hl) - 1, Math.round(p.y - perpY * hl) - 1, 2, 2);
+      for (const s of [tubeR, -tubeR]) {
+        oc.save();
+        oc.translate(p.x + perpX * s, p.y + perpY * s);
+        oc.rotate(ang);
+        oc.fillStyle = "#e12020";
+        oc.fillRect(-4, -11, 8, 22);  // 進行方向8px × 横断22px
+        oc.restore();
+      }
     }
   }
 
@@ -706,7 +725,7 @@ function updateAICar(c) {
   let frictionMul = 1, turnMul = 1;
   if (surf.surface === "grass") { frictionMul = 0.4; turnMul = 0.75; }
   else if (surf.surface === "offroad") { frictionMul = 0.5 + c.offroadRate * 0.5; turnMul = 0.8; }
-  else if (surf.surface === "ice") { frictionMul = 0.85; turnMul = 0.72; }
+  else if (surf.surface === "ice") { frictionMul = 0.85; turnMul = 0.78; }
 
   const rw = COURSES[selectedCourse].roadWidth;
 
